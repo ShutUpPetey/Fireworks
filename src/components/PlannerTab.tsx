@@ -305,34 +305,69 @@ function SimEditModal({ sim, fw, showItemId, parentStartTime, parentDuration, on
 
 // ── Linked cue display card ────────────────────────────────────────────
 function SimCard({
-  sim, fw, showItemId, parentStartTime, onEdit, onRemove,
+  sim, fw, showItemId, parentStartTime, parentDuration, onUpdate, onEdit, onRemove,
 }: {
   sim: SimultaneousItem;
   fw: Firework | undefined;
   showItemId: string;
   parentStartTime: number;
+  parentDuration: number;
+  onUpdate: (showItemId: string, sim: SimultaneousItem) => void;
   onEdit: () => void;
   onRemove: (showItemId: string, simId: string) => void;
 }) {
   if (!fw) return null;
   const absoluteFireTime = parentStartTime + sim.offset;
+  const alignEndOffset = Math.max(0, parentDuration - fw.duration);
 
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 border-t border-black/20 bg-black/10">
-      <Link2 size={11} className="text-slate-400 shrink-0" />
-      <span className="text-xs text-white font-medium truncate flex-1">{fw.name}</span>
-      <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${TYPE_COLORS[fw.type]}`}>{FIREWORK_TYPE_LABELS[fw.type]}</span>
-      <span className="text-xs font-mono text-slate-400 shrink-0">{formatDuration(fw.duration)}</span>
-      <span className="text-xs font-mono text-blue-300 shrink-0">{formatTime(absoluteFireTime)}</span>
-      {sim.cue && (
-        <span className="text-xs font-mono text-slate-400 bg-slate-900/60 px-1.5 py-0.5 rounded shrink-0">{sim.cue}</span>
-      )}
-      <button onClick={onEdit} className="p-1.5 text-slate-500 hover:text-blue-400 transition-colors shrink-0" title="Edit linked cue">
-        <Pencil size={12} />
-      </button>
-      <button onClick={() => onRemove(showItemId, sim.id)} className="p-1.5 text-slate-500 hover:text-red-400 transition-colors shrink-0">
-        <X size={12} />
-      </button>
+    <div className="border-t border-black/20 bg-black/10">
+      <div className="flex items-center gap-2 px-3 py-1.5">
+        <Link2 size={11} className="text-slate-400 shrink-0" />
+        <span className="text-xs text-white font-medium truncate flex-1">{fw.name}</span>
+        <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${TYPE_COLORS[fw.type]}`}>{FIREWORK_TYPE_LABELS[fw.type]}</span>
+        <span className="text-xs font-mono text-slate-400 shrink-0">{formatDuration(fw.duration)}</span>
+        <input
+          className="w-14 bg-slate-900/50 border border-slate-700 rounded px-1.5 py-0.5 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
+          placeholder="cue"
+          value={sim.cue}
+          onChange={e => onUpdate(showItemId, { ...sim, cue: e.target.value })}
+        />
+        <select
+          className="bg-slate-900/50 border border-slate-700 rounded px-1 py-0.5 text-xs text-white focus:outline-none focus:border-blue-500"
+          value={sim.location}
+          onChange={e => onUpdate(showItemId, { ...sim, location: e.target.value })}
+        >
+          {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+        </select>
+        <button onClick={onEdit} className="p-1 text-slate-500 hover:text-blue-400 transition-colors shrink-0" title="Edit linked cue">
+          <Pencil size={12} />
+        </button>
+        <button onClick={() => onRemove(showItemId, sim.id)} className="p-1 text-slate-500 hover:text-red-400 transition-colors shrink-0">
+          <X size={12} />
+        </button>
+      </div>
+      <div className="flex items-center gap-1.5 px-3 pb-1.5 pl-7">
+        <Clock size={9} className="text-slate-500 shrink-0" />
+        <input
+          type="number" min="0" step="1"
+          className="w-14 bg-slate-900/50 border border-slate-700 rounded px-1.5 py-0.5 text-xs font-mono text-white text-center focus:outline-none focus:border-blue-500"
+          value={absoluteFireTime}
+          onChange={e => {
+            const abs = Math.max(0, parseInt(e.target.value) || 0);
+            onUpdate(showItemId, { ...sim, offset: abs - parentStartTime });
+          }}
+        />
+        <span className="text-xs text-slate-500">sec · <span className="font-mono text-blue-300">{formatTime(absoluteFireTime)}</span></span>
+        <button
+          onClick={() => onUpdate(showItemId, { ...sim, offset: 0 })}
+          className={`text-xs px-1.5 py-0.5 rounded transition-colors ${sim.offset === 0 ? 'bg-blue-700 text-white' : 'bg-slate-900/50 text-slate-500 hover:text-slate-300'}`}
+        >Same</button>
+        <button
+          onClick={() => onUpdate(showItemId, { ...sim, offset: alignEndOffset })}
+          className={`text-xs px-1.5 py-0.5 rounded transition-colors ${sim.offset === alignEndOffset && alignEndOffset !== 0 ? 'bg-blue-700 text-white' : 'bg-slate-900/50 text-slate-500 hover:text-slate-300'}`}
+        >+End</button>
+      </div>
     </div>
   );
 }
@@ -390,6 +425,7 @@ interface RowProps {
   fireworks: Firework[];
   onRemove: (id: string) => void;
   onRemoveSimultaneous: (showItemId: string, simId: string) => void;
+  onUpdateSimultaneous: (showItemId: string, sim: SimultaneousItem) => void;
   maxDuration: number;
   isSimDropTarget: boolean;
   onEditItem: () => void;
@@ -398,7 +434,7 @@ interface RowProps {
 
 function DroppableRow({
   item, fw, effectiveDuration, index, fireworks,
-  onRemove, onRemoveSimultaneous,
+  onRemove, onRemoveSimultaneous, onUpdateSimultaneous,
   maxDuration, isSimDropTarget, onEditItem, onEditSim,
 }: RowProps) {
   const { setNodeRef } = useDroppable({ id: item.id });
@@ -467,6 +503,8 @@ function DroppableRow({
             fw={fireworks.find(f => f.id === sim.fireworkId)}
             showItemId={item.id}
             parentStartTime={startTime}
+            parentDuration={fw.duration}
+            onUpdate={onUpdateSimultaneous}
             onEdit={() => onEditSim(sim.id)}
             onRemove={onRemoveSimultaneous}
           />
@@ -548,6 +586,20 @@ export default function PlannerTab({
   const getNextStartTime = () => {
     if (showItems.length === 0) return 0;
     return Math.max(0, ...showItems.map(si => si.startTime + (effectiveDurationMap.get(si.id) ?? 0)));
+  };
+
+  const handleRemove = (id: string) => {
+    const item = showItems.find(si => si.id === id);
+    if (item) {
+      const effectiveDur = effectiveDurationMap.get(id) ?? 0;
+      const deletedEnd = item.startTime + effectiveDur;
+      showItems.forEach(si => {
+        if (si.id !== id && si.startTime >= deletedEnd) {
+          onUpdate({ ...si, startTime: si.startTime - effectiveDur });
+        }
+      });
+    }
+    onRemove(id);
   };
 
   const makeShowItem = (fw: Firework, startTime = 0): ShowItem => ({
@@ -752,6 +804,7 @@ export default function PlannerTab({
                 onEditItem={id => setEditingItemId(id)}
                 onUpdate={onUpdate}
                 onUpdateSimultaneous={onUpdateSimultaneous}
+                onRemove={handleRemove}
                 dropHint={dropHint}
               />
             </div>
@@ -776,8 +829,9 @@ export default function PlannerTab({
                           effectiveDuration={effectiveDurationMap.get(item.id) ?? 0}
                           index={idx}
                           fireworks={fireworks}
-                          onRemove={onRemove}
+                          onRemove={handleRemove}
                           onRemoveSimultaneous={onRemoveSimultaneous}
+                          onUpdateSimultaneous={onUpdateSimultaneous}
                           maxDuration={maxDuration}
                           isSimDropTarget={hint?.position === 'on'}
                           onEditItem={() => setEditingItemId(item.id)}

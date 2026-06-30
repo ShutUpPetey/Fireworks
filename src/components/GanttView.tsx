@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
-import { ZoomIn, ZoomOut, Link2 } from 'lucide-react';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { ZoomIn, ZoomOut, Link2, Trash2 } from 'lucide-react';
 import { useDroppable } from '@dnd-kit/core';
 import type { Firework, ShowItem, SimultaneousItem } from '../types';
 import { PHASE_COLORS, formatDuration, formatTime } from '../types';
@@ -13,6 +13,7 @@ interface Props {
   onEditItem?: (id: string) => void;
   onUpdate?: (item: ShowItem) => void;
   onUpdateSimultaneous?: (showItemId: string, sim: SimultaneousItem) => void;
+  onRemove?: (id: string) => void;
   dropHint?: DropHint;
 }
 
@@ -44,11 +45,16 @@ interface RowProps {
   onEditItem?: (id: string) => void;
   onUpdate?: (item: ShowItem) => void;
   onUpdateSimultaneous?: (showItemId: string, sim: SimultaneousItem) => void;
+  onRemove?: (id: string) => void;
+  onBarDragStateChange?: (isDragging: boolean) => void;
+  onTrashHover?: (over: boolean) => void;
+  checkIsOverTrash?: (x: number, y: number) => boolean;
 }
 
 function DroppableGanttRow({
   item, fireworks, idx, pxPerSec, trackW, ticks,
   dropHint, onEditItem, onUpdate, onUpdateSimultaneous,
+  onRemove, onBarDragStateChange, onTrashHover, checkIsOverTrash,
 }: RowProps) {
   const { setNodeRef } = useDroppable({ id: item.id });
   const [liveStart, setLiveStart] = useState<number | null>(null);
@@ -78,14 +84,25 @@ function DroppableGanttRow({
       if (!moved && Math.abs(ev.clientX - startX) >= 4) {
         moved = true;
         el.setPointerCapture(pointerId);
+        onBarDragStateChange?.(true);
       }
-      if (moved) setLiveStart(compute(ev.clientX));
+      if (moved) {
+        setLiveStart(compute(ev.clientX));
+        onTrashHover?.(checkIsOverTrash?.(ev.clientX, ev.clientY) ?? false);
+      }
     };
     const onUp = (ev: PointerEvent) => {
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
-      if (moved && onUpdate) {
-        onUpdate({ ...item, startTime: compute(ev.clientX) });
+      onBarDragStateChange?.(false);
+      onTrashHover?.(false);
+      if (moved) {
+        const overTrash = checkIsOverTrash?.(ev.clientX, ev.clientY) ?? false;
+        if (overTrash) {
+          onRemove?.(item.id);
+        } else if (onUpdate) {
+          onUpdate({ ...item, startTime: compute(ev.clientX) });
+        }
       } else if (!moved) {
         onEditItem?.(item.id);
       }
@@ -213,9 +230,19 @@ function DroppableGanttRow({
   );
 }
 
-export default function GanttView({ fireworks, showItems, totalTime, onEditItem, onUpdate, onUpdateSimultaneous, dropHint }: Props) {
+export default function GanttView({ fireworks, showItems, totalTime, onEditItem, onUpdate, onUpdateSimultaneous, onRemove, dropHint }: Props) {
   const [pxPerSec, setPxPerSec] = useState(8);
+  const [isDraggingBar, setIsDraggingBar] = useState(false);
+  const [isOverTrash, setIsOverTrash] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const trashRef = useRef<HTMLDivElement>(null);
+
+  const checkIsOverTrash = useCallback((x: number, y: number) => {
+    const el = trashRef.current;
+    if (!el) return false;
+    const rect = el.getBoundingClientRect();
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }, []);
 
   const zoomIn  = () => setPxPerSec(p => Math.min(20, +(p * 1.5).toFixed(2)));
   const zoomOut = () => setPxPerSec(p => Math.max(0.3, +(p / 1.5).toFixed(2)));
@@ -272,7 +299,19 @@ export default function GanttView({ fireworks, showItems, totalTime, onEditItem,
           })}
         </div>
 
-        <span className="ml-auto text-xs text-slate-600">Drag bar to retime · drag linked bar to offset · Ctrl+scroll / pinch to zoom</span>
+        {isDraggingBar ? (
+          <div
+            ref={trashRef}
+            className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg font-medium transition-all select-none ${
+              isOverTrash ? 'bg-red-600 text-white scale-105' : 'bg-red-950/60 text-red-400 border border-red-800'
+            }`}
+          >
+            <Trash2 size={14} />
+            <span className="text-xs">Drop to delete</span>
+          </div>
+        ) : (
+          <span className="ml-auto text-xs text-slate-600">Drag bar to retime · drag linked bar to offset · Ctrl+scroll / pinch to zoom</span>
+        )}
       </div>
 
       <div ref={scrollRef} className="flex-1 overflow-auto">
@@ -304,6 +343,10 @@ export default function GanttView({ fireworks, showItems, totalTime, onEditItem,
               onEditItem={onEditItem}
               onUpdate={onUpdate}
               onUpdateSimultaneous={onUpdateSimultaneous}
+              onRemove={onRemove}
+              onBarDragStateChange={setIsDraggingBar}
+              onTrashHover={setIsOverTrash}
+              checkIsOverTrash={checkIsOverTrash}
             />
           ))}
 
