@@ -414,12 +414,13 @@ export default function PlannerTab({
   const [dropHint, setDropHint] = useState<DropHint>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
 
-  // Track live pointer Y for accurate 3-zone drop detection
+  // Track pointer Y in capture phase so we intercept before dnd-kit's
+  // bubble-phase listener can call stopPropagation and freeze the value.
   const pointerYRef = useRef(0);
   useEffect(() => {
     const handler = (e: PointerEvent) => { pointerYRef.current = e.clientY; };
-    window.addEventListener('pointermove', handler, { passive: true });
-    return () => window.removeEventListener('pointermove', handler);
+    document.addEventListener('pointermove', handler, { capture: true, passive: true });
+    return () => document.removeEventListener('pointermove', handler, { capture: true });
   }, []);
 
   const sensors = useSensors(
@@ -461,12 +462,12 @@ export default function PlannerTab({
     showNotes: '', gapBefore: 0, simultaneous: [],
   });
 
-  // Compute drop zone (top ⅓ = before, middle ⅓ = on/simultaneous, bottom ⅓ = after)
+  // Compute drop zone: top 25% = before, middle 50% = on/simultaneous, bottom 25% = after
   const computePosition = (overRect: { top: number; height: number }): 'before' | 'on' | 'after' => {
     const relY = pointerYRef.current - overRect.top;
     const frac = overRect.height > 0 ? relY / overRect.height : 0.5;
-    if (frac < 0.33) return 'before';
-    if (frac > 0.67) return 'after';
+    if (frac < 0.25) return 'before';
+    if (frac > 0.75) return 'after';
     return 'on';
   };
 
