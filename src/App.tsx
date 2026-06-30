@@ -161,6 +161,7 @@ export default function App() {
             onAdd={store.addShowItem}
             onAddMany={store.addShowItems}
             onUpdate={store.updateShowItem}
+            onUpdateFirework={store.updateFirework}
             onRemove={store.removeShowItem}
             onClear={store.clearShow}
             onAddSimultaneous={store.addSimultaneous}

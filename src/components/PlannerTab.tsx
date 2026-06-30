@@ -7,7 +7,7 @@ import {
 import { v4 as uuid } from 'uuid';
 import {
   GripVertical, Plus, X, Clock, DollarSign,
-  ChevronDown, Info, Link2, List, BarChart2, Pencil,
+  ChevronDown, Info, Link2, List, BarChart2, Pencil, Star,
 } from 'lucide-react';
 import type { Firework, ShowItem, SimultaneousItem } from '../types';
 import {
@@ -22,6 +22,7 @@ interface Props {
   onAdd: (item: ShowItem) => void;
   onAddMany: (items: ShowItem[]) => void;
   onUpdate: (item: ShowItem) => void;
+  onUpdateFirework: (fw: Firework) => void;
   onRemove: (id: string) => void;
   onClear: () => void;
   onAddSimultaneous: (showItemId: string, fw: Firework) => void;
@@ -30,6 +31,9 @@ interface Props {
 }
 
 type DropHint = { itemId: string; position: 'before' | 'after' | 'on' } | null;
+
+const FIREWORK_TYPES = Object.entries(FIREWORK_TYPE_LABELS) as [import('../types').FireworkType, string][];
+const PHASE_ORDER = ['start', 'body', 'mid_finale', 'finale', 'other'] as const;
 
 function InsertLine() {
   return (
@@ -41,14 +45,192 @@ function InsertLine() {
   );
 }
 
-function EditItemModal({ item, fw, onUpdate, onClose }: {
+// ── Main show-item edit modal ──────────────────────────────────────────
+function EditItemModal({ item, fw, onUpdate, onUpdateFirework, onClose }: {
   item: ShowItem;
   fw: Firework;
   onUpdate: (item: ShowItem) => void;
+  onUpdateFirework: (fw: Firework) => void;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState(item);
-  const save = () => { onUpdate(draft); onClose(); };
+  const [fwDraft, setFwDraft] = useState(fw);
+
+  const save = () => {
+    onUpdate(draft);
+    onUpdateFirework(fwDraft);
+    onClose();
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={onClose}>
+      <div
+        className="w-full max-w-lg bg-slate-800 rounded-t-2xl md:rounded-2xl border border-slate-700 shadow-2xl flex flex-col max-h-[90vh]"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
+          <div>
+            <h3 className="text-white font-semibold text-base">Edit Cue</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Changes apply to this cue and the inventory item</p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white p-1.5 -mr-1"><X size={18} /></button>
+        </div>
+
+        <div className="overflow-y-auto flex-1 px-5 pb-3 space-y-4">
+          {/* Cue settings */}
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">Cue Settings</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">
+                  Start time
+                  <span className="ml-2 text-slate-500 font-mono">{formatTime(draft.startTime)}</span>
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number" min="0" step="1"
+                    className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                    value={draft.startTime}
+                    onChange={e => setDraft(d => ({ ...d, startTime: Math.max(0, parseInt(e.target.value) || 0) }))}
+                  />
+                  <span className="text-xs text-slate-500 shrink-0">seconds</span>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1.5">Cue #</label>
+                  <input
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                    placeholder="1.1" value={draft.cue}
+                    onChange={e => setDraft(d => ({ ...d, cue: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1.5">Location</label>
+                  <select
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                    value={draft.location} onChange={e => setDraft(d => ({ ...d, location: e.target.value }))}
+                  >
+                    {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Show notes</label>
+                <input
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                  placeholder="Notes for the operator…" value={draft.showNotes}
+                  onChange={e => setDraft(d => ({ ...d, showNotes: e.target.value }))}
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Divider */}
+          <div className="border-t border-slate-700" />
+
+          {/* Firework details */}
+          <div>
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2.5">Firework Details</p>
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Name</label>
+                <input
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                  placeholder="Firework name" value={fwDraft.name}
+                  onChange={e => setFwDraft(d => ({ ...d, name: e.target.value }))}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1.5">Type</label>
+                  <select
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                    value={fwDraft.type} onChange={e => setFwDraft(d => ({ ...d, type: e.target.value as Firework['type'] }))}
+                  >
+                    {FIREWORK_TYPES.map(([k, v]) => <option key={k} value={k}>{v}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1.5">Show phase</label>
+                  <select
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                    value={fwDraft.phase} onChange={e => setFwDraft(d => ({ ...d, phase: e.target.value as Firework['phase'] }))}
+                  >
+                    {PHASE_ORDER.map(ph => <option key={ph} value={ph}>{PHASE_LABELS[ph]}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1.5">Duration (sec)</label>
+                  <input
+                    type="number" min="1" step="1"
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                    value={fwDraft.duration}
+                    onChange={e => setFwDraft(d => ({ ...d, duration: Math.max(1, parseInt(e.target.value) || 1) }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1.5">Cost ($)</label>
+                  <input
+                    type="number" min="0" step="0.01"
+                    className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                    value={fwDraft.cost}
+                    onChange={e => setFwDraft(d => ({ ...d, cost: Math.max(0, parseFloat(e.target.value) || 0) }))}
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1.5">Rating</label>
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="number" min="0" max="10" step="1"
+                      className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                      value={fwDraft.rating}
+                      onChange={e => setFwDraft(d => ({ ...d, rating: Math.max(0, Math.min(10, parseInt(e.target.value) || 0)) }))}
+                    />
+                    <Star size={13} className="text-amber-400 shrink-0" />
+                  </div>
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs text-slate-400 mb-1.5">Firework notes</label>
+                <input
+                  className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                  placeholder="Color effects, height, etc." value={fwDraft.notes}
+                  onChange={e => setFwDraft(d => ({ ...d, notes: e.target.value }))}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex gap-3 px-5 py-4 border-t border-slate-700 shrink-0">
+          <button onClick={onClose} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white rounded-xl py-3 text-sm font-medium transition-colors">Cancel</button>
+          <button onClick={save} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white rounded-xl py-3 text-sm font-medium transition-colors">Save</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Linked cue edit modal ──────────────────────────────────────────────
+function SimEditModal({ sim, fw, showItemId, parentStartTime, parentDuration, onUpdate, onClose }: {
+  sim: SimultaneousItem;
+  fw: Firework;
+  showItemId: string;
+  parentStartTime: number;
+  parentDuration: number;
+  onUpdate: (showItemId: string, sim: SimultaneousItem) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState(sim);
+  const absoluteFireTime = parentStartTime + draft.offset;
+  const alignEndOffset = Math.max(0, parentDuration - fw.duration);
+
+  const save = () => { onUpdate(showItemId, draft); onClose(); };
 
   return (
     <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60" onClick={onClose}>
@@ -56,17 +238,47 @@ function EditItemModal({ item, fw, onUpdate, onClose }: {
         <div className="flex items-start justify-between mb-4">
           <div>
             <h3 className="text-white font-semibold text-base">{fw.name}</h3>
-            <p className="text-xs text-slate-400 mt-0.5">{FIREWORK_TYPE_LABELS[fw.type]} · {formatDuration(fw.duration)}</p>
+            <p className="text-xs text-slate-400 mt-0.5">Linked cue · {FIREWORK_TYPE_LABELS[fw.type]} · {formatDuration(fw.duration)}</p>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white p-1.5 -mt-1 -mr-1"><X size={18} /></button>
         </div>
+
         <div className="space-y-3">
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">
+              Fire time
+              <span className="ml-2 text-slate-500 font-mono">{formatTime(absoluteFireTime)}</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min="0" step="1"
+                className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                value={absoluteFireTime}
+                onChange={e => {
+                  const abs = Math.max(0, parseInt(e.target.value) || 0);
+                  setDraft(d => ({ ...d, offset: abs - parentStartTime }));
+                }}
+              />
+              <span className="text-xs text-slate-500 shrink-0">seconds</span>
+            </div>
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={() => setDraft(d => ({ ...d, offset: 0 }))}
+                className={`flex-1 text-xs py-1.5 rounded-lg transition-colors ${draft.offset === 0 ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+              >Same time as parent</button>
+              <button
+                onClick={() => setDraft(d => ({ ...d, offset: alignEndOffset }))}
+                className={`flex-1 text-xs py-1.5 rounded-lg transition-colors ${draft.offset === alignEndOffset ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+              >Align end</button>
+            </div>
+          </div>
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-slate-400 mb-1.5">Cue #</label>
               <input
                 className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
-                placeholder="1.1" value={draft.cue}
+                placeholder="cue" value={draft.cue}
                 onChange={e => setDraft(d => ({ ...d, cue: e.target.value }))}
               />
             </div>
@@ -80,30 +292,8 @@ function EditItemModal({ item, fw, onUpdate, onClose }: {
               </select>
             </div>
           </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1.5">
-              Start time in show
-              <span className="ml-2 text-slate-500 font-mono">{formatTime(draft.startTime)}</span>
-            </label>
-            <div className="flex items-center gap-2">
-              <input
-                type="number" min="0" step="1"
-                className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
-                value={draft.startTime}
-                onChange={e => setDraft(d => ({ ...d, startTime: Math.max(0, parseInt(e.target.value) || 0) }))}
-              />
-              <span className="text-xs text-slate-500 shrink-0">seconds</span>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs text-slate-400 mb-1.5">Show notes</label>
-            <input
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
-              placeholder="Notes for the operator…" value={draft.showNotes}
-              onChange={e => setDraft(d => ({ ...d, showNotes: e.target.value }))}
-            />
-          </div>
         </div>
+
         <div className="flex gap-3 mt-5">
           <button onClick={onClose} className="flex-1 bg-slate-700 hover:bg-slate-600 text-white rounded-xl py-3 text-sm font-medium transition-colors">Cancel</button>
           <button onClick={save} className="flex-1 bg-blue-600 hover:bg-blue-500 text-white rounded-xl py-3 text-sm font-medium transition-colors">Save</button>
@@ -113,73 +303,41 @@ function EditItemModal({ item, fw, onUpdate, onClose }: {
   );
 }
 
+// ── Linked cue display card ────────────────────────────────────────────
 function SimCard({
-  sim, fw, showItemId, parentStartTime, parentDuration, onUpdate, onRemove,
+  sim, fw, showItemId, parentStartTime, onEdit, onRemove,
 }: {
   sim: SimultaneousItem;
   fw: Firework | undefined;
   showItemId: string;
   parentStartTime: number;
-  parentDuration: number;
-  onUpdate: (showItemId: string, s: SimultaneousItem) => void;
+  onEdit: () => void;
   onRemove: (showItemId: string, simId: string) => void;
 }) {
   if (!fw) return null;
   const absoluteFireTime = parentStartTime + sim.offset;
-  const alignEndOffset = Math.max(0, parentDuration - fw.duration);
 
   return (
-    <div className="flex flex-col gap-1.5 px-3 py-2 border-t border-black/20 bg-black/10">
-      <div className="flex items-center gap-2">
-        <Link2 size={11} className="text-slate-400 shrink-0" />
-        <span className="text-xs text-white font-medium truncate flex-1">{fw.name}</span>
-        <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${TYPE_COLORS[fw.type]}`}>{FIREWORK_TYPE_LABELS[fw.type]}</span>
-        <span className="text-xs font-mono text-slate-400 shrink-0">{formatDuration(fw.duration)}</span>
-        <input
-          className="w-16 bg-slate-900/60 border border-slate-600 rounded px-1.5 py-1 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
-          placeholder="cue" value={sim.cue}
-          onChange={e => onUpdate(showItemId, { ...sim, cue: e.target.value })}
-        />
-        <select
-          className="bg-slate-900/60 border border-slate-600 rounded px-1.5 py-1 text-xs text-white focus:outline-none"
-          value={sim.location} onChange={e => onUpdate(showItemId, { ...sim, location: e.target.value })}
-        >
-          {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
-        </select>
-        <button onClick={() => onRemove(showItemId, sim.id)} className="text-slate-500 hover:text-red-400 p-1.5 shrink-0">
-          <X size={13} />
-        </button>
-      </div>
-
-      <div className="flex items-center gap-1.5 pl-[18px] flex-wrap">
-        <Clock size={10} className="text-slate-500 shrink-0" />
-        <input
-          type="number" min="0" step="1"
-          className="w-16 bg-slate-900/60 border border-slate-600 rounded px-1.5 py-1 text-xs font-mono text-white text-center focus:outline-none focus:border-blue-500"
-          value={absoluteFireTime}
-          onChange={e => {
-            const abs = Math.max(0, parseInt(e.target.value) || 0);
-            onUpdate(showItemId, { ...sim, offset: abs - parentStartTime });
-          }}
-        />
-        <span className="text-[10px] text-slate-500 shrink-0">
-          sec · <span className="font-mono">{formatTime(absoluteFireTime)}</span>
-        </span>
-        <div className="flex items-center gap-1 ml-auto">
-          <button
-            onClick={() => onUpdate(showItemId, { ...sim, offset: 0 })}
-            className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${sim.offset === 0 ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
-          >Same time</button>
-          <button
-            onClick={() => onUpdate(showItemId, { ...sim, offset: alignEndOffset })}
-            className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${sim.offset === alignEndOffset ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
-          >Align end</button>
-        </div>
-      </div>
+    <div className="flex items-center gap-2 px-3 py-1.5 border-t border-black/20 bg-black/10">
+      <Link2 size={11} className="text-slate-400 shrink-0" />
+      <span className="text-xs text-white font-medium truncate flex-1">{fw.name}</span>
+      <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${TYPE_COLORS[fw.type]}`}>{FIREWORK_TYPE_LABELS[fw.type]}</span>
+      <span className="text-xs font-mono text-slate-400 shrink-0">{formatDuration(fw.duration)}</span>
+      <span className="text-xs font-mono text-blue-300 shrink-0">{formatTime(absoluteFireTime)}</span>
+      {sim.cue && (
+        <span className="text-xs font-mono text-slate-400 bg-slate-900/60 px-1.5 py-0.5 rounded shrink-0">{sim.cue}</span>
+      )}
+      <button onClick={onEdit} className="p-1.5 text-slate-500 hover:text-blue-400 transition-colors shrink-0" title="Edit linked cue">
+        <Pencil size={12} />
+      </button>
+      <button onClick={() => onRemove(showItemId, sim.id)} className="p-1.5 text-slate-500 hover:text-red-400 transition-colors shrink-0">
+        <X size={12} />
+      </button>
     </div>
   );
 }
 
+// ── Draggable sidebar card ─────────────────────────────────────────────
 function DraggableFireworkCard({ fw, qty, onSetQty, onClickAdd }: {
   fw: Firework;
   qty: number;
@@ -194,11 +352,7 @@ function DraggableFireworkCard({ fw, qty, onSetQty, onClickAdd }: {
   return (
     <div ref={setNodeRef} className={`rounded-lg bg-slate-800 overflow-hidden transition-opacity ${isDragging ? 'opacity-40' : ''}`}>
       <div className="flex items-center">
-        <div
-          {...attributes} {...listeners}
-          className="cursor-grab active:cursor-grabbing px-2 py-3.5 text-slate-500 hover:text-slate-300 touch-none shrink-0"
-          title="Drag to add · drop onto item to fire simultaneously · drop between items to insert"
-        >
+        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing px-2 py-3.5 text-slate-500 hover:text-slate-300 touch-none shrink-0" title="Drag to add">
           <GripVertical size={15} />
         </div>
         <button onClick={onClickAdd} className="flex-1 text-left py-2 pr-3 hover:bg-slate-700 transition-colors group">
@@ -227,6 +381,7 @@ function DraggableFireworkCard({ fw, qty, onSetQty, onClickAdd }: {
   );
 }
 
+// ── Droppable show-item row ────────────────────────────────────────────
 interface RowProps {
   item: ShowItem;
   fw: Firework | undefined;
@@ -234,17 +389,17 @@ interface RowProps {
   index: number;
   fireworks: Firework[];
   onRemove: (id: string) => void;
-  onUpdateSimultaneous: (showItemId: string, sim: SimultaneousItem) => void;
   onRemoveSimultaneous: (showItemId: string, simId: string) => void;
   maxDuration: number;
   isSimDropTarget: boolean;
   onEditItem: () => void;
+  onEditSim: (simId: string) => void;
 }
 
 function DroppableRow({
   item, fw, effectiveDuration, index, fireworks,
-  onRemove, onUpdateSimultaneous, onRemoveSimultaneous,
-  maxDuration, isSimDropTarget, onEditItem,
+  onRemove, onRemoveSimultaneous,
+  maxDuration, isSimDropTarget, onEditItem, onEditSim,
 }: RowProps) {
   const { setNodeRef } = useDroppable({ id: item.id });
 
@@ -271,10 +426,12 @@ function DroppableRow({
             </div>
           </div>
         )}
+
         <div className="flex items-center gap-1.5 px-3 py-0.5 bg-black/15 border-b border-black/10 text-xs text-slate-500">
           <Clock size={9} className="shrink-0" />
           <span className="font-mono">{formatTime(startTime)}</span>
         </div>
+
         <div className="flex items-center gap-2 px-3 py-2.5">
           <span className="text-slate-500 text-xs font-mono w-6 text-center shrink-0">{index + 1}</span>
           {item.cue && (
@@ -295,13 +452,14 @@ function DroppableRow({
           {item.location && item.location !== 'FC' && (
             <span className="text-xs text-slate-400 font-mono shrink-0">{item.location}</span>
           )}
-          <button onClick={onEditItem} className="p-2 text-slate-500 hover:text-blue-400 transition-colors shrink-0" title="Edit item">
+          <button onClick={onEditItem} className="p-2 text-slate-500 hover:text-blue-400 transition-colors shrink-0" title="Edit cue">
             <Pencil size={13} />
           </button>
           <button onClick={() => onRemove(item.id)} className="p-2 text-slate-500 hover:text-red-400 transition-colors shrink-0">
             <X size={15} />
           </button>
         </div>
+
         {(item.simultaneous ?? []).map(sim => (
           <SimCard
             key={sim.id}
@@ -309,11 +467,11 @@ function DroppableRow({
             fw={fireworks.find(f => f.id === sim.fireworkId)}
             showItemId={item.id}
             parentStartTime={startTime}
-            parentDuration={fw.duration}
-            onUpdate={onUpdateSimultaneous}
+            onEdit={() => onEditSim(sim.id)}
             onRemove={onRemoveSimultaneous}
           />
         ))}
+
         {fw.notes && (
           <div className="px-3 pb-2 flex items-start gap-1.5">
             <Info size={11} className="text-slate-500 shrink-0 mt-0.5" />
@@ -325,11 +483,10 @@ function DroppableRow({
   );
 }
 
-const PHASE_ORDER = ['start', 'body', 'mid_finale', 'finale', 'other'] as const;
-
+// ── Main planner tab ───────────────────────────────────────────────────
 export default function PlannerTab({
   fireworks, showItems,
-  onAdd, onAddMany, onUpdate, onRemove, onClear,
+  onAdd, onAddMany, onUpdate, onUpdateFirework, onRemove, onClear,
   onAddSimultaneous, onUpdateSimultaneous, onRemoveSimultaneous,
 }: Props) {
   const [sidebarPhase, setSidebarPhase] = useState<typeof PHASE_ORDER[number]>('start');
@@ -339,6 +496,7 @@ export default function PlannerTab({
   const [activeSidebarFwId, setActiveSidebarFwId] = useState<string | null>(null);
   const [dropHint, setDropHint] = useState<DropHint>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
+  const [editingSim, setEditingSim] = useState<{ showItemId: string; simId: string } | null>(null);
 
   const pointerYRef = useRef(0);
   useEffect(() => {
@@ -430,7 +588,6 @@ export default function PlannerTab({
 
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
-
     if (active.data.current?.type === 'sidebar') {
       const fwId = active.data.current.fireworkId as string;
       const fw = fireworks.find(f => f.id === fwId);
@@ -461,16 +618,11 @@ export default function PlannerTab({
           onAdd(makeShowItem(fw, t));
         } else {
           let cursor = t;
-          const items = Array.from({ length: qty }, () => {
-            const item = makeShowItem(fw, cursor);
-            cursor += fw.duration;
-            return item;
-          });
+          const items = Array.from({ length: qty }, () => { const item = makeShowItem(fw, cursor); cursor += fw.duration; return item; });
           onAddMany(items);
         }
       }
     }
-
     setActiveSidebarFwId(null);
     setDropHint(null);
   };
@@ -479,8 +631,14 @@ export default function PlannerTab({
 
   const activeSidebarFw = activeSidebarFwId ? fireworks.find(f => f.id === activeSidebarFwId) : null;
   const sidebarFws = fireworks.filter(fw => fw.phase === sidebarPhase);
+
   const editingItem = editingItemId ? showItems.find(si => si.id === editingItemId) : null;
   const editingFw = editingItem ? fireworks.find(f => f.id === editingItem.fireworkId) : null;
+
+  const editingSimShowItem = editingSim ? showItems.find(si => si.id === editingSim.showItemId) : null;
+  const editingSimItem = editingSimShowItem?.simultaneous.find(s => s.id === editingSim?.simId) ?? null;
+  const editingSimFw = editingSimItem ? fireworks.find(f => f.id === editingSimItem.fireworkId) : null;
+  const editingSimParentFw = editingSimShowItem ? fireworks.find(f => f.id === editingSimShowItem.fireworkId) : null;
 
   return (
     <DndContext
@@ -519,9 +677,7 @@ export default function PlannerTab({
                 })}
               </div>
               <div className="px-3 py-1.5 bg-slate-900/40 border-b border-slate-700/50">
-                <p className="text-[10px] text-slate-500 leading-snug">
-                  Click to add · Drag onto item → fire together · Drag between items → insert there
-                </p>
+                <p className="text-[10px] text-slate-500 leading-snug">Click to add · Drag onto item → fire together · Drag between items → insert there</p>
               </div>
               <div className="flex-1 overflow-y-auto p-2 space-y-1">
                 {sidebarFws.length === 0 ? (
@@ -561,7 +717,6 @@ export default function PlannerTab({
               <DollarSign size={14} />
               <span>Cost: <span className="text-emerald-400 font-semibold">${totalCost.toFixed(2)}</span></span>
             </div>
-
             <div className="flex border border-slate-600 rounded-lg overflow-hidden">
               <button onClick={() => setViewMode('list')} className={`px-3 py-1.5 text-xs flex items-center gap-1.5 transition-colors ${viewMode === 'list' ? 'bg-slate-600 text-white' : 'text-slate-400 hover:bg-slate-700'}`}>
                 <List size={12} /> List
@@ -570,7 +725,6 @@ export default function PlannerTab({
                 <BarChart2 size={12} /> Timeline
               </button>
             </div>
-
             <div className="flex items-center gap-3 ml-auto flex-wrap">
               {PHASE_ORDER.map(phase => {
                 const pc = PHASE_COLORS[phase];
@@ -584,7 +738,6 @@ export default function PlannerTab({
                 );
               })}
             </div>
-
             {showItems.length > 0 && (
               <button onClick={() => { if (confirm('Clear the entire show?')) onClear(); }} className="text-xs text-slate-500 hover:text-red-400 transition-colors">Clear Show</button>
             )}
@@ -624,11 +777,11 @@ export default function PlannerTab({
                           index={idx}
                           fireworks={fireworks}
                           onRemove={onRemove}
-                          onUpdateSimultaneous={onUpdateSimultaneous}
                           onRemoveSimultaneous={onRemoveSimultaneous}
                           maxDuration={maxDuration}
                           isSimDropTarget={hint?.position === 'on'}
                           onEditItem={() => setEditingItemId(item.id)}
+                          onEditSim={simId => setEditingSim({ showItemId: item.id, simId })}
                         />
                         {hint?.position === 'after' && <InsertLine />}
                       </React.Fragment>
@@ -665,7 +818,25 @@ export default function PlannerTab({
       </DragOverlay>
 
       {editingItem && editingFw && (
-        <EditItemModal item={editingItem} fw={editingFw} onUpdate={onUpdate} onClose={() => setEditingItemId(null)} />
+        <EditItemModal
+          item={editingItem}
+          fw={editingFw}
+          onUpdate={onUpdate}
+          onUpdateFirework={onUpdateFirework}
+          onClose={() => setEditingItemId(null)}
+        />
+      )}
+
+      {editingSimShowItem && editingSimItem && editingSimFw && (
+        <SimEditModal
+          sim={editingSimItem}
+          fw={editingSimFw}
+          showItemId={editingSimShowItem.id}
+          parentStartTime={editingSimShowItem.startTime}
+          parentDuration={editingSimParentFw?.duration ?? 0}
+          onUpdate={onUpdateSimultaneous}
+          onClose={() => setEditingSim(null)}
+        />
       )}
     </DndContext>
   );

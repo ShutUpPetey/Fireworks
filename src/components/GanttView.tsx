@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { ZoomIn, ZoomOut, Link2 } from 'lucide-react';
 import { useDroppable } from '@dnd-kit/core';
 import type { Firework, ShowItem, SimultaneousItem } from '../types';
@@ -214,10 +214,24 @@ function DroppableGanttRow({
 }
 
 export default function GanttView({ fireworks, showItems, totalTime, onEditItem, onUpdate, onUpdateSimultaneous, dropHint }: Props) {
-  const [pxPerSec, setPxPerSec] = useState(2);
+  const [pxPerSec, setPxPerSec] = useState(8);
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const zoomIn  = () => setPxPerSec(p => Math.min(12, +(p * 1.6).toFixed(2)));
-  const zoomOut = () => setPxPerSec(p => Math.max(0.2, +(p / 1.6).toFixed(2)));
+  const zoomIn  = () => setPxPerSec(p => Math.min(20, +(p * 1.5).toFixed(2)));
+  const zoomOut = () => setPxPerSec(p => Math.max(0.3, +(p / 1.5).toFixed(2)));
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
+      setPxPerSec(p => Math.max(0.3, Math.min(20, +(p * factor).toFixed(2))));
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
 
   const tickInterval = pxPerSec >= 4 ? 15 : pxPerSec >= 2 ? 30 : pxPerSec >= 0.8 ? 60 : 120;
   const trackW = Math.ceil(totalTime * pxPerSec) + 200;
@@ -258,10 +272,10 @@ export default function GanttView({ fireworks, showItems, totalTime, onEditItem,
           })}
         </div>
 
-        <span className="ml-auto text-xs text-slate-600">Drag bar to retime · drag linked bars to offset · click to edit</span>
+        <span className="ml-auto text-xs text-slate-600">Drag bar to retime · drag linked bar to offset · Ctrl+scroll / pinch to zoom</span>
       </div>
 
-      <div className="flex-1 overflow-auto">
+      <div ref={scrollRef} className="flex-1 overflow-auto">
         <div style={{ minWidth: LABEL_W + trackW }}>
           {/* Time ruler */}
           <div className="flex sticky top-0 z-10 bg-slate-950 border-b border-slate-800" style={{ height: 28 }}>
