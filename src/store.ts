@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { v4 as uuid } from 'uuid';
 import type { Firework, ShowItem, SimultaneousItem } from './types';
 
-interface AppState {
+export interface AppState {
   fireworks: Firework[];
   showItems: ShowItem[];
   overlapSeconds: number;
@@ -10,7 +10,7 @@ interface AppState {
 
 const STORAGE_KEY = 'fireworks-planner-v1';
 
-function migrate(raw: Partial<AppState>): AppState {
+export function migrate(raw: Partial<AppState>): AppState {
   return {
     fireworks: raw.fireworks ?? [],
     showItems: (raw.showItems ?? []).map(si => ({
@@ -81,6 +81,9 @@ export function useStore() {
   const setOverlap = (seconds: number) =>
     setState(s => ({ ...s, overlapSeconds: seconds }));
 
+  const loadAll = (raw: Partial<AppState>) =>
+    setState(() => migrate(raw));
+
   const addSimultaneous = (showItemId: string, fw: Firework) =>
     setState(s => ({
       ...s,
@@ -126,6 +129,7 @@ export function useStore() {
     reorderShowItems,
     clearShow,
     setOverlap,
+    loadAll,
     addSimultaneous,
     updateSimultaneous,
     removeSimultaneous,

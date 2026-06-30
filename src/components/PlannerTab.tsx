@@ -247,7 +247,7 @@ export default function PlannerTab({
   onSetOverlap, onAddSimultaneous, onUpdateSimultaneous, onRemoveSimultaneous,
 }: Props) {
   const [sidebarPhase, setSidebarPhase] = useState<typeof PHASE_ORDER[number]>('start');
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
   const [qtys, setQtys] = useState<Record<string, number>>({});
   const [pairingFor, setPairingFor] = useState<string | null>(null);
 
@@ -322,9 +322,11 @@ export default function PlannerTab({
   const sidebarFws = fireworks.filter(fw => fw.phase === sidebarPhase);
 
   return (
-    <div className="flex h-full">
+    <div className="flex flex-col md:flex-row h-full">
       {/* ── Inventory Sidebar ── */}
-      <div className={`shrink-0 border-r border-slate-700 flex flex-col transition-all duration-200 ${sidebarOpen ? 'w-72' : 'w-10'}`}>
+      <div className={`shrink-0 border-b md:border-b-0 md:border-r border-slate-700 flex flex-col overflow-hidden transition-all duration-200 ${
+        sidebarOpen ? 'h-72 md:h-auto md:w-72' : 'h-12 md:h-auto md:w-10'
+      }`}>
         <button
           onClick={() => setSidebarOpen(o => !o)}
           className="flex items-center justify-between px-3 py-3 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors border-b border-slate-700"

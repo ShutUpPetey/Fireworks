@@ -89,7 +89,7 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-700">
+      <div className="flex flex-wrap items-center gap-2 md:gap-3 px-4 md:px-6 py-3 border-b border-slate-700">
         <div className="text-sm text-slate-400">
           <span className="text-white font-semibold">{showItems.length}</span> items in show
           {hasCues && (
@@ -132,7 +132,7 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-auto">
         {showItems.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-slate-500">
             <span className="text-5xl mb-4">📋</span>

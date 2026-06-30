@@ -61,7 +61,7 @@ export default function InventoryTab({ fireworks, onAdd, onUpdate, onDelete, onI
       </div>
 
       {/* Toolbar */}
-      <div className="flex items-center gap-3 px-6 py-3 border-b border-slate-700">
+      <div className="flex flex-wrap items-center gap-2 md:gap-3 px-4 md:px-6 py-3 border-b border-slate-700">
         <div className="relative flex-1 max-w-xs">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -124,7 +124,7 @@ export default function InventoryTab({ fireworks, onAdd, onUpdate, onDelete, onI
       </div>
 
       {/* Table */}
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-auto">
         {fireworks.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-64 text-slate-500">
             <span className="text-5xl mb-4">🎆</span>
