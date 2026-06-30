@@ -3,25 +3,20 @@ import { ZoomIn, ZoomOut, GripVertical, Link2 } from 'lucide-react';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import type { Firework, ShowItem, SimultaneousItem } from '../types';
-import { PHASE_COLORS, FIREWORK_TYPE_LABELS, formatDuration, formatTime } from '../types';
+import { PHASE_COLORS, formatDuration, formatTime } from '../types';
 
 type DropHint = { itemId: string; position: 'before' | 'after' | 'on' } | null;
 
 interface Props {
   fireworks: Firework[];
   showItems: ShowItem[];
-  overlapSeconds: number;
   timings: number[];
   effectiveDurations: number[];
   totalTime: number;
   onEditItem?: (id: string) => void;
-  dropHint?: DropHint;
+  onUpdate?: (item: ShowItem) => void;
   onUpdateSimultaneous?: (showItemId: string, sim: SimultaneousItem) => void;
-}
-
-function formatOffset(offset: number): string {
-  if (offset === 0) return 'same time';
-  return offset > 0 ? `+${offset}s` : `${offset}s`;
+  dropHint?: DropHint;
 }
 
 const LABEL_W = 196;
@@ -36,6 +31,11 @@ function GanttInsertLine() {
   );
 }
 
+function formatOffset(offset: number): string {
+  if (offset === 0) return 'same time';
+  return offset > 0 ? `+${offset}s` : `${offset}s`;
+}
+
 interface RowProps {
   item: ShowItem;
   fireworks: Firework[];
@@ -44,18 +44,20 @@ interface RowProps {
   pxPerSec: number;
   trackW: number;
   ticks: number[];
-  overlapSeconds: number;
-  totalItems: number;
+  totalItems?: number; // unused but kept for API compat
+  totalTime?: number;  // unused but kept for API compat
   dropHint?: DropHint;
   onEditItem?: (id: string) => void;
+  onUpdate?: (item: ShowItem) => void;
   onUpdateSimultaneous?: (showItemId: string, sim: SimultaneousItem) => void;
 }
 
 function SortableGanttRow({
   item, fireworks, idx, start, pxPerSec, trackW, ticks,
-  overlapSeconds, totalItems, dropHint, onEditItem, onUpdateSimultaneous,
+  dropHint, onEditItem, onUpdate, onUpdateSimultaneous,
 }: RowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
+  const [liveStart, setLiveStart] = useState<number | null>(null);
   const [liveOffsets, setLiveOffsets] = useState<Record<string, number>>({});
 
   const fw = fireworks.find(f => f.id === item.fireworkId);
@@ -66,21 +68,53 @@ function SortableGanttRow({
   const rowH = 44 + sims.length * 22;
   const hint = dropHint?.itemId === item.id ? dropHint : null;
   const isSimTarget = hint?.position === 'on';
+  const effectiveStart = liveStart ?? start;
 
-  // Drag a simultaneous bar left/right to retime it relative to the parent's start.
-  // Uses native pointer events (not dnd-kit) since this is a continuous-position
-  // scrub, not a sortable swap, and the bar isn't part of any useSortable/useDraggable.
+  // Drag the primary bar left/right to retime the cue's absolute start time.
+  // Small movement (<4px) is treated as a click → open edit modal.
+  const handleBarPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.stopPropagation();
+    const startX = e.clientX;
+    const origTime = start;
+    let moved = false;
+    const pointerId = e.pointerId;
+    const el = e.currentTarget;
+
+    const compute = (clientX: number) => Math.max(0, Math.round(origTime + (clientX - startX) / pxPerSec));
+
+    const onMove = (ev: PointerEvent) => {
+      if (!moved && Math.abs(ev.clientX - startX) >= 4) {
+        moved = true;
+        el.setPointerCapture(pointerId);
+      }
+      if (moved) setLiveStart(compute(ev.clientX));
+    };
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      if (moved && onUpdate) {
+        onUpdate({ ...item, startTime: compute(ev.clientX) });
+      } else if (!moved) {
+        onEditItem?.(item.id);
+      }
+      setLiveStart(null);
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
+
+  // Drag a simultaneous bar left/right to retime its offset from the parent's start.
   const handleSimPointerDown = (e: React.PointerEvent<HTMLDivElement>, sim: SimultaneousItem) => {
     if (!onUpdateSimultaneous) return;
     e.stopPropagation();
     e.preventDefault();
     const startX = e.clientX;
-    const startOffset = sim.offset;
+    const origOffset = sim.offset;
     const pointerId = e.pointerId;
     const el = e.currentTarget;
     el.setPointerCapture(pointerId);
 
-    const compute = (clientX: number) => Math.round(startOffset + (clientX - startX) / pxPerSec);
+    const compute = (clientX: number) => Math.round(origOffset + (clientX - startX) / pxPerSec);
 
     const onMove = (ev: PointerEvent) => {
       setLiveOffsets(prev => ({ ...prev, [sim.id]: compute(ev.clientX) }));
@@ -112,7 +146,7 @@ function SortableGanttRow({
         }}
         className={`flex border-b border-slate-800/60 hover:bg-slate-800/20 transition-colors relative ${isSimTarget ? 'ring-1 ring-inset ring-blue-400' : ''}`}
       >
-        {/* Simultaneous drop overlay */}
+        {/* Simultaneous-drop overlay */}
         {isSimTarget && (
           <div className="absolute inset-0 bg-blue-500/10 flex items-center justify-center z-10 pointer-events-none">
             <div className="flex items-center gap-2 bg-blue-900/90 rounded-lg px-3 py-1.5 border border-blue-500 shadow-lg">
@@ -130,19 +164,24 @@ function SortableGanttRow({
           <button
             {...attributes} {...listeners}
             className="cursor-grab active:cursor-grabbing text-slate-600 hover:text-slate-400 shrink-0 touch-none p-1 mt-0.5"
-            title="Drag to reorder"
+            title="Drag to reorder cue numbers"
           >
             <GripVertical size={13} />
           </button>
           <span className="text-xs font-mono text-slate-600 w-4 shrink-0 pt-0.5">{idx + 1}</span>
           <div className="min-w-0 flex-1">
             <p className="text-xs text-white font-medium truncate leading-tight">{fw.name}</p>
-            <p className="text-[10px] text-slate-500 font-mono mt-0.5">{formatTime(start)} · {formatDuration(fw.duration)}</p>
+            <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+              {liveStart !== null
+                ? <span className="text-blue-400">{formatTime(liveStart)}</span>
+                : formatTime(start)
+              } · {formatDuration(fw.duration)}
+            </p>
           </div>
         </div>
 
         {/* Track */}
-        <div className="relative flex-1" style={{ minWidth: trackW }}>
+        <div className="relative flex-1 overflow-visible" style={{ minWidth: trackW }}>
           {ticks.map(sec => (
             <div
               key={sec}
@@ -151,27 +190,23 @@ function SortableGanttRow({
             />
           ))}
 
-          {overlapSeconds > 0 && idx < totalItems - 1 && (
-            <div
-              className="absolute top-0 bottom-0 bg-amber-500/8 border-l border-dashed border-amber-500/25"
-              style={{
-                left: Math.max(0, (start + fw.duration - overlapSeconds) * pxPerSec),
-                width: overlapSeconds * pxPerSec,
-              }}
-            />
-          )}
-
-          {/* Primary bar */}
+          {/* Primary bar — draggable horizontally to retime */}
           <div
-            className={`absolute top-2 rounded flex items-center gap-1 px-2 border ${pc.bg} ${pc.border} overflow-hidden ${onEditItem ? 'cursor-pointer hover:brightness-125 transition-[filter]' : ''}`}
+            className={`absolute top-2 rounded flex items-center gap-1 px-2 border ${pc.bg} ${pc.border} overflow-visible cursor-grab active:cursor-grabbing select-none ${liveStart !== null ? 'ring-2 ring-white/30 z-20' : 'hover:brightness-110'} transition-[filter]`}
             style={{
-              left: start * pxPerSec,
+              left: effectiveStart * pxPerSec,
               width: Math.max(fw.duration * pxPerSec, 6),
               height: 32,
             }}
-            title={onEditItem ? `${fw.name} — tap to edit` : `${fw.name} · ${formatDuration(fw.duration)} · ${FIREWORK_TYPE_LABELS[fw.type]}`}
-            onClick={() => onEditItem?.(item.id)}
+            title={`${fw.name} — drag to retime · click to edit`}
+            onPointerDown={handleBarPointerDown}
           >
+            {/* Live time tooltip while dragging */}
+            {liveStart !== null && (
+              <span className="absolute -top-6 left-0 text-[10px] font-mono font-bold text-white bg-slate-900 border border-slate-600 px-1.5 py-0.5 rounded shadow-lg whitespace-nowrap pointer-events-none">
+                {formatTime(liveStart)}
+              </span>
+            )}
             {fw.duration * pxPerSec > 36 && (
               <span className={`text-xs font-medium truncate ${pc.text}`}>{fw.name}</span>
             )}
@@ -182,25 +217,31 @@ function SortableGanttRow({
             )}
           </div>
 
-          {/* Simultaneous bars — draggable left/right to retime against the parent's start */}
+          {/* Simultaneous bars — draggable left/right to retime offset */}
           {sims.map((sim, si) => {
             const sfw = fireworks.find(f => f.id === sim.fireworkId);
             if (!sfw) return null;
             const spc = PHASE_COLORS[sfw.phase];
             const liveOffset = liveOffsets[sim.id] ?? sim.offset;
+            const isDraggingSim = liveOffsets[sim.id] !== undefined;
             return (
               <div
                 key={sim.id}
-                className={`absolute rounded flex items-center px-2 border border-dashed ${spc.bg} ${spc.border} overflow-hidden opacity-80 ${onUpdateSimultaneous ? 'cursor-ew-resize hover:opacity-100' : ''} ${liveOffsets[sim.id] !== undefined ? 'z-20 opacity-100 ring-1 ring-white/40' : ''}`}
+                className={`absolute rounded flex items-center px-2 border border-dashed ${spc.bg} ${spc.border} overflow-visible opacity-80 cursor-ew-resize select-none ${isDraggingSim ? 'z-20 opacity-100 ring-1 ring-white/40' : 'hover:opacity-100'}`}
                 style={{
                   top: 40 + si * 22,
-                  left: (start + liveOffset) * pxPerSec,
+                  left: (effectiveStart + liveOffset) * pxPerSec,
                   width: Math.max(sfw.duration * pxPerSec, 6),
                   height: 18,
                 }}
                 title={`${sfw.name} (${formatOffset(liveOffset)}) — drag to retime`}
                 onPointerDown={e => handleSimPointerDown(e, sim)}
               >
+                {isDraggingSim && (
+                  <span className="absolute -top-5 left-0 text-[10px] font-mono font-bold text-white bg-slate-900 border border-slate-600 px-1.5 py-0.5 rounded shadow-lg whitespace-nowrap pointer-events-none">
+                    {formatTime(effectiveStart + liveOffset)}
+                  </span>
+                )}
                 {sfw.duration * pxPerSec > 40 && (
                   <span className={`text-[10px] font-medium truncate flex items-center gap-1 ${spc.text}`}>
                     <Link2 size={9} className="shrink-0" />{sfw.name}
@@ -217,14 +258,14 @@ function SortableGanttRow({
   );
 }
 
-export default function GanttView({ fireworks, showItems, overlapSeconds, timings, totalTime, onEditItem, dropHint, onUpdateSimultaneous }: Props) {
+export default function GanttView({ fireworks, showItems, timings, totalTime, onEditItem, onUpdate, onUpdateSimultaneous, dropHint }: Props) {
   const [pxPerSec, setPxPerSec] = useState(2);
 
   const zoomIn  = () => setPxPerSec(p => Math.min(12, +(p * 1.6).toFixed(2)));
   const zoomOut = () => setPxPerSec(p => Math.max(0.2, +(p / 1.6).toFixed(2)));
 
   const tickInterval = pxPerSec >= 4 ? 15 : pxPerSec >= 2 ? 30 : pxPerSec >= 0.8 ? 60 : 120;
-  const trackW = Math.ceil(totalTime * pxPerSec) + 100;
+  const trackW = Math.ceil(totalTime * pxPerSec) + 200;
   const ticks = Array.from({ length: Math.floor(totalTime / tickInterval) + 2 }, (_, i) => i * tickInterval);
 
   if (showItems.length === 0) {
@@ -264,7 +305,7 @@ export default function GanttView({ fireworks, showItems, overlapSeconds, timing
           })}
         </div>
 
-        <span className="ml-auto text-xs text-slate-600">Drag ⠿ to reorder · drag from inventory to insert · click bar to edit</span>
+        <span className="ml-auto text-xs text-slate-600">Drag bar to retime · drag ⠿ to reorder · drag linked bars to offset</span>
       </div>
 
       {/* Scrollable chart */}
@@ -295,20 +336,21 @@ export default function GanttView({ fireworks, showItems, overlapSeconds, timing
                 item={item}
                 fireworks={fireworks}
                 idx={idx}
-                start={timings[idx] ?? 0}
+                start={timings[idx] ?? item.startTime}
                 pxPerSec={pxPerSec}
                 trackW={trackW}
                 ticks={ticks}
-                overlapSeconds={overlapSeconds}
                 totalItems={showItems.length}
+                totalTime={totalTime}
                 dropHint={dropHint}
                 onEditItem={onEditItem}
+                onUpdate={onUpdate}
                 onUpdateSimultaneous={onUpdateSimultaneous}
               />
             ))}
           </SortableContext>
 
-          {/* Show-end row */}
+          {/* Show-end marker */}
           <div className="flex" style={{ height: 32 }}>
             <div
               style={{ width: LABEL_W, minWidth: LABEL_W }}

@@ -27,8 +27,8 @@ export interface ShowItem {
   cue: string;       // e.g. "1.1", "3.7"
   location: string;  // FC, FL, FR, BL, BR, TRAIL, etc.
   showNotes: string;
-  gapBefore: number; // seconds pause before this fires
-  simultaneous: SimultaneousItem[]; // fires at same time as this item
+  startTime: number; // absolute seconds from show start; freely positionable
+  simultaneous: SimultaneousItem[]; // linked items with their own offset from this item's startTime
 }
 
 export const FIREWORK_TYPE_LABELS: Record<FireworkType, string> = {

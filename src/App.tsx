@@ -38,7 +38,6 @@ export default function App() {
     const data = JSON.stringify({
       fireworks: store.fireworks,
       showItems: store.showItems,
-      overlapSeconds: store.overlapSeconds,
     }, null, 2);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -159,7 +158,6 @@ export default function App() {
           <PlannerTab
             fireworks={store.fireworks}
             showItems={store.showItems}
-            overlapSeconds={store.overlapSeconds}
             onAdd={store.addShowItem}
             onAddMany={store.addShowItems}
             onInsertAt={store.insertShowItemAt}
@@ -167,7 +165,6 @@ export default function App() {
             onRemove={store.removeShowItem}
             onReorder={store.reorderShowItems}
             onClear={store.clearShow}
-            onSetOverlap={store.setOverlap}
             onAddSimultaneous={store.addSimultaneous}
             onUpdateSimultaneous={store.updateSimultaneous}
             onRemoveSimultaneous={store.removeSimultaneous}

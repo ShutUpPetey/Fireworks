@@ -12,7 +12,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { v4 as uuid } from 'uuid';
 import {
   GripVertical, Plus, X, Clock, DollarSign,
-  ChevronDown, Pause, Info, Link2, Unlink, List, BarChart2, Pencil,
+  ChevronDown, Info, Link2, List, BarChart2, Pencil,
 } from 'lucide-react';
 import type { Firework, ShowItem, SimultaneousItem } from '../types';
 import {
@@ -24,7 +24,6 @@ import GanttView from './GanttView';
 interface Props {
   fireworks: Firework[];
   showItems: ShowItem[];
-  overlapSeconds: number;
   onAdd: (item: ShowItem) => void;
   onAddMany: (items: ShowItem[]) => void;
   onInsertAt: (item: ShowItem, index: number) => void;
@@ -32,7 +31,6 @@ interface Props {
   onRemove: (id: string) => void;
   onReorder: (items: ShowItem[]) => void;
   onClear: () => void;
-  onSetOverlap: (s: number) => void;
   onAddSimultaneous: (showItemId: string, fw: Firework) => void;
   onUpdateSimultaneous: (showItemId: string, sim: SimultaneousItem) => void;
   onRemoveSimultaneous: (showItemId: string, simId: string) => void;
@@ -107,13 +105,19 @@ function EditItemModal({ item, fw, onUpdate, onClose }: {
           </div>
 
           <div>
-            <label className="block text-xs text-slate-400 mb-1.5">Pause before (seconds)</label>
-            <input
-              type="number" min="0" max="300"
-              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
-              value={draft.gapBefore}
-              onChange={e => setDraft(d => ({ ...d, gapBefore: parseInt(e.target.value) || 0 }))}
-            />
+            <label className="block text-xs text-slate-400 mb-1.5">
+              Start time in show
+              <span className="ml-2 text-slate-500 font-mono">{formatTime(draft.startTime)}</span>
+            </label>
+            <div className="flex items-center gap-2">
+              <input
+                type="number" min="0" step="1"
+                className="flex-1 bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                value={draft.startTime}
+                onChange={e => setDraft(d => ({ ...d, startTime: Math.max(0, parseInt(e.target.value) || 0) }))}
+              />
+              <span className="text-xs text-slate-500 shrink-0">seconds</span>
+            </div>
           </div>
 
           <div>
@@ -337,12 +341,11 @@ function SortableRow({
           </div>
         )}
 
-        {item.gapBefore > 0 && (
-          <div className="flex items-center gap-2 px-3 py-1 bg-black/20 border-b border-slate-700/50 text-xs text-slate-400">
-            <Pause size={10} />
-            <span>{item.gapBefore}s pause before</span>
-          </div>
-        )}
+        {/* Absolute start time band */}
+        <div className="flex items-center gap-1.5 px-3 py-0.5 bg-black/15 border-b border-black/10 text-xs text-slate-500">
+          <Clock size={9} className="shrink-0" />
+          <span className="font-mono">{formatTime(startTime)}</span>
+        </div>
 
         {/* Main row */}
         <div className="flex items-center gap-2 px-3 py-2.5">
@@ -429,9 +432,9 @@ function SortableRow({
 const PHASE_ORDER = ['start', 'body', 'mid_finale', 'finale', 'other'] as const;
 
 export default function PlannerTab({
-  fireworks, showItems, overlapSeconds,
+  fireworks, showItems,
   onAdd, onAddMany, onInsertAt, onUpdate, onRemove, onReorder, onClear,
-  onSetOverlap, onAddSimultaneous, onUpdateSimultaneous, onRemoveSimultaneous,
+  onAddSimultaneous, onUpdateSimultaneous, onRemoveSimultaneous,
 }: Props) {
   const [sidebarPhase, setSidebarPhase] = useState<typeof PHASE_ORDER[number]>('start');
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
@@ -469,24 +472,28 @@ export default function PlannerTab({
   [showItems, fireworks]);
 
   const { timings, totalTime, totalCost } = useMemo(() => {
-    let t = 0;
-    const timings: number[] = [];
+    const timings = showItems.map(si => si.startTime);
     let cost = 0;
+    let maxEnd = 0;
     showItems.forEach((si, idx) => {
-      t += si.gapBefore;
-      timings.push(t);
       const fw = fireworks.find(f => f.id === si.fireworkId);
       if (fw) cost += fw.cost;
-      t += Math.max(0, (effectiveDurations[idx] ?? 0) - overlapSeconds);
+      maxEnd = Math.max(maxEnd, si.startTime + (effectiveDurations[idx] ?? 0));
     });
-    return { timings, totalTime: t, totalCost: cost };
-  }, [showItems, fireworks, effectiveDurations, overlapSeconds]);
+    return { timings, totalTime: maxEnd, totalCost: cost };
+  }, [showItems, fireworks, effectiveDurations]);
 
   const maxDuration = useMemo(() => Math.max(...effectiveDurations, 1), [effectiveDurations]);
 
-  const makeShowItem = (fw: Firework): ShowItem => ({
+  // Compute where the next appended item should start (right after the current show ends)
+  const getNextStartTime = () => {
+    if (showItems.length === 0) return 0;
+    return Math.max(0, ...showItems.map((si, idx) => si.startTime + (effectiveDurations[idx] ?? 0)));
+  };
+
+  const makeShowItem = (fw: Firework, startTime = 0): ShowItem => ({
     id: uuid(), fireworkId: fw.id, cue: '', location: 'FC',
-    showNotes: '', gapBefore: 0, simultaneous: [],
+    showNotes: '', startTime, simultaneous: [],
   });
 
   // Compute drop zone: top 25% = before, middle 50% = on/simultaneous, bottom 25% = after
@@ -546,19 +553,31 @@ export default function PlannerTab({
               onAddSimultaneous(overId, fw);
             } else {
               const insertIdx = position === 'before' ? targetIdx : targetIdx + 1;
-              onInsertAt(makeShowItem(fw), insertIdx);
+              // New item starts right after the item before the insertion point ends
+              const prevIdx = insertIdx - 1;
+              const newStartTime = prevIdx >= 0
+                ? (showItems[prevIdx].startTime + (effectiveDurations[prevIdx] ?? 0))
+                : 0;
+              onInsertAt(makeShowItem(fw, newStartTime), insertIdx);
             }
             setActiveSidebarFwId(null);
             setDropHint(null);
             return;
           }
         }
-        // No drop target — append to end
+        // No drop target — append right after current show end
+        const t = getNextStartTime();
         const qty = getQty(fwId);
         if (qty === 1) {
-          onAdd(makeShowItem(fw));
+          onAdd(makeShowItem(fw, t));
         } else {
-          onAddMany(Array.from({ length: qty }, () => makeShowItem(fw)));
+          let cursor = t;
+          const items = Array.from({ length: qty }, () => {
+            const item = makeShowItem(fw, cursor);
+            cursor += fw.duration;
+            return item;
+          });
+          onAddMany(items);
         }
       }
     } else if (over && active.id !== over.id) {
@@ -647,10 +666,17 @@ export default function PlannerTab({
                       onSetQty={v => setQty(fw.id, v)}
                       onClickAdd={() => {
                         const qty = getQty(fw.id);
+                        const t = getNextStartTime();
                         if (qty === 1) {
-                          onAdd(makeShowItem(fw));
+                          onAdd(makeShowItem(fw, t));
                         } else {
-                          onAddMany(Array.from({ length: qty }, () => makeShowItem(fw)));
+                          let cursor = t;
+                          const items = Array.from({ length: qty }, () => {
+                            const item = makeShowItem(fw, cursor);
+                            cursor += fw.duration;
+                            return item;
+                          });
+                          onAddMany(items);
                         }
                       }}
                     />
@@ -675,19 +701,6 @@ export default function PlannerTab({
             <div className="flex items-center gap-1 text-sm text-slate-400">
               <DollarSign size={14} />
               <span>Cost: <span className="text-emerald-400 font-semibold">${totalCost.toFixed(2)}</span></span>
-            </div>
-
-            {/* Overlap */}
-            <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5">
-              <Unlink size={13} className="text-slate-400 shrink-0" />
-              <label className="text-xs text-slate-400 whitespace-nowrap">Overlap:</label>
-              <input
-                type="number" min="0" max="60"
-                className="w-14 bg-slate-700 border border-slate-600 rounded px-2 py-0.5 text-xs text-white font-mono text-center focus:outline-none focus:border-blue-500"
-                value={overlapSeconds}
-                onChange={e => onSetOverlap(Math.max(0, parseInt(e.target.value) || 0))}
-              />
-              <span className="text-xs text-slate-500">sec early</span>
             </div>
 
             {/* View toggle */}
@@ -735,13 +748,13 @@ export default function PlannerTab({
               <GanttView
                 fireworks={fireworks}
                 showItems={showItems}
-                overlapSeconds={overlapSeconds}
                 timings={timings}
                 effectiveDurations={effectiveDurations}
                 totalTime={totalTime}
                 onEditItem={id => setEditingItemId(id)}
-                dropHint={dropHint}
+                onUpdate={onUpdate}
                 onUpdateSimultaneous={onUpdateSimultaneous}
+                dropHint={dropHint}
               />
             </div>
           ) : (

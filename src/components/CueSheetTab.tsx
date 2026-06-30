@@ -18,20 +18,8 @@ type ViewMode = 'list' | 'grid';
 export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSimultaneous }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
 
-  // Compute running times (accounting for simultaneous items' offset + duration)
-  const timings = useMemo(() => {
-    let t = 0;
-    return showItems.map(si => {
-      t += si.gapBefore;
-      const start = t;
-      const fw = fireworks.find(f => f.id === si.fireworkId);
-      const simEnd = (si.simultaneous ?? [])
-        .map(s => (s.offset ?? 0) + (fireworks.find(f => f.id === s.fireworkId)?.duration ?? 0))
-        .reduce((a, b) => Math.max(a, b), 0);
-      if (fw) t += Math.max(fw.duration, simEnd);
-      return start;
-    });
-  }, [showItems, fireworks]);
+  // Each item carries its own absolute startTime — no derived chain needed
+  const timings = useMemo(() => showItems.map(si => si.startTime), [showItems]);
 
 
   const autoAssignCues = () => {

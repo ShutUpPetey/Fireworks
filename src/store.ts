@@ -6,22 +6,46 @@ import { showRef, set, onValue, isConfigured } from './firebase';
 export interface AppState {
   fireworks: Firework[];
   showItems: ShowItem[];
-  overlapSeconds: number;
 }
 
 export type SyncStatus = 'synced' | 'saving' | 'offline' | 'local';
 
 const STORAGE_KEY = 'fireworks-planner-v1';
 
-export function migrate(raw: Partial<AppState>): AppState {
-  return {
-    fireworks: raw.fireworks ?? [],
-    showItems: (raw.showItems ?? []).map(si => ({
-      ...si,
-      simultaneous: (si.simultaneous ?? []).map(sim => ({ ...sim, offset: sim.offset ?? 0 })),
-    })),
-    overlapSeconds: raw.overlapSeconds ?? 0,
-  };
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function migrate(raw: any): AppState {
+  const fireworks: Firework[] = raw.fireworks ?? [];
+  const overlapSeconds: number = raw.overlapSeconds ?? 0; // old field, used only during migration
+
+  let runningTime = 0;
+  const showItems: ShowItem[] = (raw.showItems ?? []).map((si: any) => {
+    const sims = (si.simultaneous ?? []).map((sim: any) => ({ ...sim, offset: sim.offset ?? 0 }));
+
+    if (si.startTime !== undefined) {
+      // Already on the new absolute-time model — ensure simultaneous items have offset
+      return { ...si, simultaneous: sims };
+    }
+
+    // Migrate from old sequential gapBefore model
+    const gapBefore: number = si.gapBefore ?? 0;
+    runningTime += gapBefore;
+    const startTime = runningTime;
+
+    const fw = fireworks.find((f: Firework) => f.id === si.fireworkId);
+    const primaryDur: number = fw?.duration ?? 0;
+    const simEnd = sims
+      .map((s: SimultaneousItem) => (s.offset) + ((fireworks.find((f: Firework) => f.id === s.fireworkId))?.duration ?? 0))
+      .reduce((a: number, b: number) => Math.max(a, b), 0);
+    runningTime += Math.max(0, Math.max(primaryDur, simEnd) - overlapSeconds);
+
+    return {
+      id: si.id, fireworkId: si.fireworkId,
+      cue: si.cue ?? '', location: si.location ?? 'FC',
+      showNotes: si.showNotes ?? '', startTime, simultaneous: sims,
+    };
+  });
+
+  return { fireworks, showItems };
 }
 
 function loadState(): AppState {
@@ -29,7 +53,7 @@ function loadState(): AppState {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (raw) return migrate(JSON.parse(raw));
   } catch {}
-  return { fireworks: [], showItems: [], overlapSeconds: 0 };
+  return { fireworks: [], showItems: [] };
 }
 
 function saveLocal(state: AppState): void {
@@ -39,7 +63,7 @@ function saveLocal(state: AppState): void {
 }
 
 export function useStore() {
-  const [state, setState] = useState<AppState>(loadState);
+  const [state, setState] = useState<AppState>(() => loadState());
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(
     isConfigured ? 'synced' : 'local'
   );
@@ -139,9 +163,6 @@ export function useStore() {
   const clearShow = () =>
     setState(s => ({ ...s, showItems: [] }));
 
-  const setOverlap = (seconds: number) =>
-    setState(s => ({ ...s, overlapSeconds: seconds }));
-
   const loadAll = (raw: Partial<AppState>) =>
     setState(() => migrate(raw));
 
@@ -178,7 +199,6 @@ export function useStore() {
   return {
     fireworks: state.fireworks,
     showItems: state.showItems,
-    overlapSeconds: state.overlapSeconds,
     syncStatus,
     addFirework,
     updateFirework,
@@ -191,7 +211,6 @@ export function useStore() {
     removeShowItem,
     reorderShowItems,
     clearShow,
-    setOverlap,
     loadAll,
     addSimultaneous,
     updateSimultaneous,
