@@ -1,6 +1,8 @@
 import { useState, useRef } from 'react';
 import { Flame, ListOrdered, CalendarDays, FileText, Download, FolderOpen } from 'lucide-react';
 import { useStore } from './store';
+import type { SyncStatus } from './store';
+import { isConfigured } from './firebase';
 import InventoryTab from './components/InventoryTab';
 import PlannerTab from './components/PlannerTab';
 import CueSheetTab from './components/CueSheetTab';
@@ -12,6 +14,20 @@ const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'planner',   label: 'Show Planner', icon: <CalendarDays size={16} /> },
   { id: 'cues',      label: 'Cue Sheet',    icon: <FileText size={16} /> },
 ];
+
+const SYNC_LABEL: Record<SyncStatus, string> = {
+  synced:  'Synced',
+  saving:  'Saving…',
+  offline: 'Offline',
+  local:   'Local only',
+};
+
+const SYNC_DOT: Record<SyncStatus, string> = {
+  synced:  'bg-emerald-400',
+  saving:  'bg-amber-400 animate-pulse',
+  offline: 'bg-red-400',
+  local:   'bg-slate-500',
+};
 
 export default function App() {
   const [tab, setTab] = useState<Tab>('inventory');
@@ -78,24 +94,36 @@ export default function App() {
           ))}
         </nav>
 
-        {/* Save / Load + stats */}
+        {/* Right side: sync status + save/load + stats */}
         <div className="ml-auto flex items-center gap-2">
+
+          {/* Sync status badge */}
+          <div
+            className="flex items-center gap-1.5 text-xs text-slate-400 px-2 py-1 rounded-md bg-slate-800/60"
+            title={isConfigured ? 'Firebase Realtime Database' : 'Configure Firebase in src/firebase-config.ts to enable cloud sync'}
+          >
+            <span className={`w-2 h-2 rounded-full shrink-0 ${SYNC_DOT[store.syncStatus]}`} />
+            <span className="hidden sm:inline">{SYNC_LABEL[store.syncStatus]}</span>
+          </div>
+
+          <div className="w-px h-5 bg-slate-800 mx-0.5" />
+
           <button
             onClick={handleSave}
-            title="Save show to file"
+            title="Export show to JSON file"
             className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg px-2.5 md:px-3 py-1.5 text-sm font-medium transition-colors"
           >
             <Download size={14} />
-            <span className="hidden sm:inline">Save</span>
+            <span className="hidden sm:inline">Export</span>
           </button>
 
           <button
             onClick={() => loadInputRef.current?.click()}
-            title="Load show from file"
+            title="Import show from JSON file"
             className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg px-2.5 md:px-3 py-1.5 text-sm font-medium transition-colors"
           >
             <FolderOpen size={14} />
-            <span className="hidden sm:inline">Load</span>
+            <span className="hidden sm:inline">Import</span>
           </button>
           <input
             ref={loadInputRef}

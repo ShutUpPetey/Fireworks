@@ -1,12 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { v4 as uuid } from 'uuid';
 import type { Firework, ShowItem, SimultaneousItem } from './types';
+import { showRef, set, onValue, isConfigured } from './firebase';
 
 export interface AppState {
   fireworks: Firework[];
   showItems: ShowItem[];
   overlapSeconds: number;
 }
+
+export type SyncStatus = 'synced' | 'saving' | 'offline' | 'local';
 
 const STORAGE_KEY = 'fireworks-planner-v1';
 
@@ -29,7 +32,7 @@ function loadState(): AppState {
   return { fireworks: [], showItems: [], overlapSeconds: 0 };
 }
 
-function saveState(state: AppState): void {
+function saveLocal(state: AppState): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   } catch {}
@@ -37,10 +40,58 @@ function saveState(state: AppState): void {
 
 export function useStore() {
   const [state, setState] = useState<AppState>(loadState);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(
+    isConfigured ? 'synced' : 'local'
+  );
+  // Prevents writing back to Firebase when a change originated there
+  const skipNextWrite = useRef(false);
 
+  // ── Firebase: listen for remote changes ──────────────────────────────────
   useEffect(() => {
-    saveState(state);
+    if (!showRef || !isConfigured) return;
+
+    const unsub = onValue(
+      showRef,
+      snapshot => {
+        const data = snapshot.val();
+        if (data) {
+          skipNextWrite.current = true;
+          setState(migrate(data));
+        }
+        setSyncStatus('synced');
+      },
+      () => setSyncStatus('offline'),
+    );
+
+    return unsub;
+  }, []);
+
+  // ── Firebase: write on local state changes (debounced 600 ms) ───────────
+  useEffect(() => {
+    if (!showRef || !isConfigured) return;
+
+    if (skipNextWrite.current) {
+      skipNextWrite.current = false;
+      return;
+    }
+
+    setSyncStatus('saving');
+    const ref = showRef;
+    const timer = setTimeout(() => {
+      set(ref, state)
+        .then(() => setSyncStatus('synced'))
+        .catch(() => setSyncStatus('offline'));
+    }, 600);
+
+    return () => clearTimeout(timer);
   }, [state]);
+
+  // ── localStorage: always keep a local cache ──────────────────────────────
+  useEffect(() => {
+    saveLocal(state);
+  }, [state]);
+
+  // ── Actions ──────────────────────────────────────────────────────────────
 
   const addFirework = (fw: Firework) =>
     setState(s => ({ ...s, fireworks: [...s.fireworks, fw] }));
@@ -118,6 +169,7 @@ export function useStore() {
     fireworks: state.fireworks,
     showItems: state.showItems,
     overlapSeconds: state.overlapSeconds,
+    syncStatus,
     addFirework,
     updateFirework,
     deleteFirework,
