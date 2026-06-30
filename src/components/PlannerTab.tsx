@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import type { DragEndEvent, DragStartEvent, DragOverEvent, DragMoveEvent } from '@dnd-kit/core';
 import {
   DndContext, closestCenter, PointerSensor,
@@ -320,6 +320,18 @@ function SimCard({
   const absoluteFireTime = parentStartTime + sim.offset;
   const alignEndOffset = Math.max(0, parentDuration - fw.duration);
 
+  const [timeStr, setTimeStr] = useState(formatTime(absoluteFireTime));
+  useEffect(() => { setTimeStr(formatTime(absoluteFireTime)); }, [absoluteFireTime]);
+
+  const commitTime = (val: string) => {
+    const mmss = val.trim().match(/^(\d+):(\d{1,2})$/);
+    const abs = mmss
+      ? parseInt(mmss[1]) * 60 + parseInt(mmss[2])
+      : Math.max(0, parseInt(val) || 0);
+    onUpdate(showItemId, { ...sim, offset: abs - parentStartTime });
+    setTimeStr(formatTime(abs));
+  };
+
   return (
     <div className="border-t border-black/20 bg-black/10">
       <div className="flex items-center gap-2 px-3 py-1.5">
@@ -350,15 +362,14 @@ function SimCard({
       <div className="flex items-center gap-1.5 px-3 pb-1.5 pl-7">
         <Clock size={9} className="text-slate-500 shrink-0" />
         <input
-          type="number" min="0" step="1"
-          className="w-14 bg-slate-900/50 border border-slate-700 rounded px-1.5 py-0.5 text-xs font-mono text-white text-center focus:outline-none focus:border-blue-500"
-          value={absoluteFireTime}
-          onChange={e => {
-            const abs = Math.max(0, parseInt(e.target.value) || 0);
-            onUpdate(showItemId, { ...sim, offset: abs - parentStartTime });
-          }}
+          type="text"
+          className="w-16 bg-slate-900/50 border border-slate-700 rounded px-1.5 py-0.5 text-xs font-mono text-blue-300 text-center focus:outline-none focus:border-blue-500"
+          value={timeStr}
+          onChange={e => setTimeStr(e.target.value)}
+          onBlur={e => commitTime(e.target.value)}
+          onKeyDown={e => e.key === 'Enter' && e.currentTarget.blur()}
+          placeholder="0:00"
         />
-        <span className="text-xs text-slate-500">sec · <span className="font-mono text-blue-300">{formatTime(absoluteFireTime)}</span></span>
         <button
           onClick={() => onUpdate(showItemId, { ...sim, offset: 0 })}
           className={`text-xs px-1.5 py-0.5 rounded transition-colors ${sim.offset === 0 ? 'bg-blue-700 text-white' : 'bg-slate-900/50 text-slate-500 hover:text-slate-300'}`}
