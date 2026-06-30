@@ -1,3 +1,8 @@
+---
+name: fireworks-import
+description: Convert any fireworks list (plain text, spreadsheet paste, notes) into a CSV ready to import into FireworksFX. Ask the user to share their data, then output a properly formatted CSV with the correct column headers and values.
+---
+
 # Fireworks Import Helper
 
 Help the user prepare fireworks data for import into FireworksFX.
