@@ -18,17 +18,17 @@ type ViewMode = 'list' | 'grid';
 export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSimultaneous }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
 
-  // Compute running times (using max of simultaneous durations per slot)
+  // Compute running times (accounting for simultaneous items' offset + duration)
   const timings = useMemo(() => {
     let t = 0;
     return showItems.map(si => {
       t += si.gapBefore;
       const start = t;
       const fw = fireworks.find(f => f.id === si.fireworkId);
-      const simMax = (si.simultaneous ?? [])
-        .map(s => fireworks.find(f => f.id === s.fireworkId)?.duration ?? 0)
+      const simEnd = (si.simultaneous ?? [])
+        .map(s => (s.offset ?? 0) + (fireworks.find(f => f.id === s.fireworkId)?.duration ?? 0))
         .reduce((a, b) => Math.max(a, b), 0);
-      if (fw) t += Math.max(fw.duration, simMax);
+      if (fw) t += Math.max(fw.duration, simEnd);
       return start;
     });
   }, [showItems, fireworks]);
@@ -256,7 +256,19 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                               {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
                             </select>
                           </td>
-                          <td className="px-4 py-1.5 text-xs text-slate-500 italic">simultaneous</td>
+                          <td className="px-4 py-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                type="number"
+                                className="w-14 bg-slate-700 border border-slate-600 rounded px-1.5 py-1 text-xs font-mono text-white text-center focus:outline-none focus:border-blue-500"
+                                value={sim.offset}
+                                onChange={e => onUpdateSimultaneous(item.id, { ...sim, offset: parseInt(e.target.value) || 0 })}
+                              />
+                              <span className="text-xs text-slate-500 italic">
+                                {sim.offset === 0 ? 'same time' : sim.offset > 0 ? `${sim.offset}s after` : `${Math.abs(sim.offset)}s before`}
+                              </span>
+                            </div>
+                          </td>
                         </tr>
                       );
                     })}

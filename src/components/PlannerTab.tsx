@@ -148,42 +148,68 @@ function EditItemModal({ item, fw, onUpdate, onClose }: {
 
 // ── Simultaneous sub-card ──────────────────────────────────────────────
 function SimCard({
-  sim, fw, showItemId, onUpdate, onRemove,
+  sim, fw, showItemId, parentDuration, onUpdate, onRemove,
 }: {
   sim: SimultaneousItem;
   fw: Firework | undefined;
   showItemId: string;
+  parentDuration: number;
   onUpdate: (showItemId: string, s: SimultaneousItem) => void;
   onRemove: (showItemId: string, simId: string) => void;
 }) {
   if (!fw) return null;
+  const alignEndOffset = Math.max(0, parentDuration - fw.duration);
   return (
-    <div className="flex items-center gap-2 px-3 py-2 border-t border-black/20 bg-black/10">
-      <Link2 size={11} className="text-slate-400 shrink-0" />
-      <span className="text-xs text-white font-medium truncate flex-1">{fw.name}</span>
-      <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${TYPE_COLORS[fw.type]}`}>
-        {FIREWORK_TYPE_LABELS[fw.type]}
-      </span>
-      <span className="text-xs font-mono text-slate-400 shrink-0">{formatDuration(fw.duration)}</span>
-      <input
-        className="w-16 bg-slate-900/60 border border-slate-600 rounded px-1.5 py-1 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
-        placeholder="cue"
-        value={sim.cue}
-        onChange={e => onUpdate(showItemId, { ...sim, cue: e.target.value })}
-      />
-      <select
-        className="bg-slate-900/60 border border-slate-600 rounded px-1.5 py-1 text-xs text-white focus:outline-none"
-        value={sim.location}
-        onChange={e => onUpdate(showItemId, { ...sim, location: e.target.value })}
-      >
-        {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
-      </select>
-      <button
-        onClick={() => onRemove(showItemId, sim.id)}
-        className="text-slate-500 hover:text-red-400 p-1.5 shrink-0"
-      >
-        <X size={13} />
-      </button>
+    <div className="flex flex-col gap-1.5 px-3 py-2 border-t border-black/20 bg-black/10">
+      <div className="flex items-center gap-2">
+        <Link2 size={11} className="text-slate-400 shrink-0" />
+        <span className="text-xs text-white font-medium truncate flex-1">{fw.name}</span>
+        <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${TYPE_COLORS[fw.type]}`}>
+          {FIREWORK_TYPE_LABELS[fw.type]}
+        </span>
+        <span className="text-xs font-mono text-slate-400 shrink-0">{formatDuration(fw.duration)}</span>
+        <input
+          className="w-16 bg-slate-900/60 border border-slate-600 rounded px-1.5 py-1 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
+          placeholder="cue"
+          value={sim.cue}
+          onChange={e => onUpdate(showItemId, { ...sim, cue: e.target.value })}
+        />
+        <select
+          className="bg-slate-900/60 border border-slate-600 rounded px-1.5 py-1 text-xs text-white focus:outline-none"
+          value={sim.location}
+          onChange={e => onUpdate(showItemId, { ...sim, location: e.target.value })}
+        >
+          {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+        </select>
+        <button
+          onClick={() => onRemove(showItemId, sim.id)}
+          className="text-slate-500 hover:text-red-400 p-1.5 shrink-0"
+        >
+          <X size={13} />
+        </button>
+      </div>
+
+      {/* Timing offset relative to parent's start */}
+      <div className="flex items-center gap-1.5 pl-[18px] flex-wrap">
+        <Clock size={10} className="text-slate-500 shrink-0" />
+        <input
+          type="number"
+          className="w-14 bg-slate-900/60 border border-slate-600 rounded px-1.5 py-1 text-xs font-mono text-white text-center focus:outline-none focus:border-blue-500"
+          value={sim.offset}
+          onChange={e => onUpdate(showItemId, { ...sim, offset: parseInt(e.target.value) || 0 })}
+        />
+        <span className="text-[10px] text-slate-500 shrink-0">sec after parent starts</span>
+        <div className="flex items-center gap-1 ml-auto">
+          <button
+            onClick={() => onUpdate(showItemId, { ...sim, offset: 0 })}
+            className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${sim.offset === 0 ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+          >Same time</button>
+          <button
+            onClick={() => onUpdate(showItemId, { ...sim, offset: alignEndOffset })}
+            className={`text-[10px] px-1.5 py-0.5 rounded transition-colors ${sim.offset === alignEndOffset ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+          >Align end</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -382,6 +408,7 @@ function SortableRow({
             sim={sim}
             fw={fireworks.find(f => f.id === sim.fireworkId)}
             showItemId={item.id}
+            parentDuration={fw.duration}
             onUpdate={onUpdateSimultaneous}
             onRemove={onRemoveSimultaneous}
           />
@@ -434,10 +461,10 @@ export default function PlannerTab({
   const effectiveDurations = useMemo(() =>
     showItems.map(item => {
       const primary = fireworks.find(f => f.id === item.fireworkId)?.duration ?? 0;
-      const simMax = (item.simultaneous ?? [])
-        .map(s => fireworks.find(f => f.id === s.fireworkId)?.duration ?? 0)
+      const simEnd = (item.simultaneous ?? [])
+        .map(s => (s.offset ?? 0) + (fireworks.find(f => f.id === s.fireworkId)?.duration ?? 0))
         .reduce((a, b) => Math.max(a, b), 0);
-      return Math.max(primary, simMax);
+      return Math.max(primary, simEnd);
     }),
   [showItems, fireworks]);
 
@@ -714,6 +741,7 @@ export default function PlannerTab({
                 totalTime={totalTime}
                 onEditItem={id => setEditingItemId(id)}
                 dropHint={dropHint}
+                onUpdateSimultaneous={onUpdateSimultaneous}
               />
             </div>
           ) : (

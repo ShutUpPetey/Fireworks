@@ -18,6 +18,7 @@ export interface SimultaneousItem {
   fireworkId: string;
   cue: string;
   location: string;
+  offset: number; // seconds after the parent item's start time (can be negative or beyond parent's duration)
 }
 
 export interface ShowItem {

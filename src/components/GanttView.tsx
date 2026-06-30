@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { ZoomIn, ZoomOut, GripVertical, Link2 } from 'lucide-react';
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
-import type { Firework, ShowItem } from '../types';
+import type { Firework, ShowItem, SimultaneousItem } from '../types';
 import { PHASE_COLORS, FIREWORK_TYPE_LABELS, formatDuration, formatTime } from '../types';
 
 type DropHint = { itemId: string; position: 'before' | 'after' | 'on' } | null;
@@ -16,6 +16,12 @@ interface Props {
   totalTime: number;
   onEditItem?: (id: string) => void;
   dropHint?: DropHint;
+  onUpdateSimultaneous?: (showItemId: string, sim: SimultaneousItem) => void;
+}
+
+function formatOffset(offset: number): string {
+  if (offset === 0) return 'same time';
+  return offset > 0 ? `+${offset}s` : `${offset}s`;
 }
 
 const LABEL_W = 196;
@@ -42,13 +48,15 @@ interface RowProps {
   totalItems: number;
   dropHint?: DropHint;
   onEditItem?: (id: string) => void;
+  onUpdateSimultaneous?: (showItemId: string, sim: SimultaneousItem) => void;
 }
 
 function SortableGanttRow({
   item, fireworks, idx, start, pxPerSec, trackW, ticks,
-  overlapSeconds, totalItems, dropHint, onEditItem,
+  overlapSeconds, totalItems, dropHint, onEditItem, onUpdateSimultaneous,
 }: RowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
+  const [liveOffsets, setLiveOffsets] = useState<Record<string, number>>({});
 
   const fw = fireworks.find(f => f.id === item.fireworkId);
   if (!fw) return null;
@@ -58,6 +66,38 @@ function SortableGanttRow({
   const rowH = 44 + sims.length * 22;
   const hint = dropHint?.itemId === item.id ? dropHint : null;
   const isSimTarget = hint?.position === 'on';
+
+  // Drag a simultaneous bar left/right to retime it relative to the parent's start.
+  // Uses native pointer events (not dnd-kit) since this is a continuous-position
+  // scrub, not a sortable swap, and the bar isn't part of any useSortable/useDraggable.
+  const handleSimPointerDown = (e: React.PointerEvent<HTMLDivElement>, sim: SimultaneousItem) => {
+    if (!onUpdateSimultaneous) return;
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const startOffset = sim.offset;
+    const pointerId = e.pointerId;
+    const el = e.currentTarget;
+    el.setPointerCapture(pointerId);
+
+    const compute = (clientX: number) => Math.round(startOffset + (clientX - startX) / pxPerSec);
+
+    const onMove = (ev: PointerEvent) => {
+      setLiveOffsets(prev => ({ ...prev, [sim.id]: compute(ev.clientX) }));
+    };
+    const onUp = (ev: PointerEvent) => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      onUpdateSimultaneous(item.id, { ...sim, offset: compute(ev.clientX) });
+      setLiveOffsets(prev => {
+        const next = { ...prev };
+        delete next[sim.id];
+        return next;
+      });
+    };
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  };
 
   return (
     <>
@@ -142,26 +182,29 @@ function SortableGanttRow({
             )}
           </div>
 
-          {/* Simultaneous bars */}
+          {/* Simultaneous bars — draggable left/right to retime against the parent's start */}
           {sims.map((sim, si) => {
             const sfw = fireworks.find(f => f.id === sim.fireworkId);
             if (!sfw) return null;
             const spc = PHASE_COLORS[sfw.phase];
+            const liveOffset = liveOffsets[sim.id] ?? sim.offset;
             return (
               <div
                 key={sim.id}
-                className={`absolute rounded flex items-center px-2 border border-dashed ${spc.bg} ${spc.border} overflow-hidden opacity-80`}
+                className={`absolute rounded flex items-center px-2 border border-dashed ${spc.bg} ${spc.border} overflow-hidden opacity-80 ${onUpdateSimultaneous ? 'cursor-ew-resize hover:opacity-100' : ''} ${liveOffsets[sim.id] !== undefined ? 'z-20 opacity-100 ring-1 ring-white/40' : ''}`}
                 style={{
                   top: 40 + si * 22,
-                  left: start * pxPerSec,
+                  left: (start + liveOffset) * pxPerSec,
                   width: Math.max(sfw.duration * pxPerSec, 6),
                   height: 18,
                 }}
-                title={`${sfw.name} (simultaneous)`}
+                title={`${sfw.name} (${formatOffset(liveOffset)}) — drag to retime`}
+                onPointerDown={e => handleSimPointerDown(e, sim)}
               >
                 {sfw.duration * pxPerSec > 40 && (
                   <span className={`text-[10px] font-medium truncate flex items-center gap-1 ${spc.text}`}>
                     <Link2 size={9} className="shrink-0" />{sfw.name}
+                    {liveOffset !== 0 && <span className="opacity-70 shrink-0">{formatOffset(liveOffset)}</span>}
                   </span>
                 )}
               </div>
@@ -174,7 +217,7 @@ function SortableGanttRow({
   );
 }
 
-export default function GanttView({ fireworks, showItems, overlapSeconds, timings, totalTime, onEditItem, dropHint }: Props) {
+export default function GanttView({ fireworks, showItems, overlapSeconds, timings, totalTime, onEditItem, dropHint, onUpdateSimultaneous }: Props) {
   const [pxPerSec, setPxPerSec] = useState(2);
 
   const zoomIn  = () => setPxPerSec(p => Math.min(12, +(p * 1.6).toFixed(2)));
@@ -260,6 +303,7 @@ export default function GanttView({ fireworks, showItems, overlapSeconds, timing
                 totalItems={showItems.length}
                 dropHint={dropHint}
                 onEditItem={onEditItem}
+                onUpdateSimultaneous={onUpdateSimultaneous}
               />
             ))}
           </SortableContext>

@@ -18,7 +18,7 @@ export function migrate(raw: Partial<AppState>): AppState {
     fireworks: raw.fireworks ?? [],
     showItems: (raw.showItems ?? []).map(si => ({
       ...si,
-      simultaneous: si.simultaneous ?? [],
+      simultaneous: (si.simultaneous ?? []).map(sim => ({ ...sim, offset: sim.offset ?? 0 })),
     })),
     overlapSeconds: raw.overlapSeconds ?? 0,
   };
@@ -150,7 +150,7 @@ export function useStore() {
       ...s,
       showItems: s.showItems.map(si =>
         si.id === showItemId
-          ? { ...si, simultaneous: [...si.simultaneous, { id: uuid(), fireworkId: fw.id, cue: '', location: 'FC' } as SimultaneousItem] }
+          ? { ...si, simultaneous: [...si.simultaneous, { id: uuid(), fireworkId: fw.id, cue: '', location: 'FC', offset: 0 } as SimultaneousItem] }
           : si
       ),
     }));
