@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import type { DragEndEvent, DragStartEvent, DragOverEvent } from '@dnd-kit/core';
+import type { DragEndEvent, DragStartEvent, DragOverEvent, DragMoveEvent } from '@dnd-kit/core';
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
   useSensor, useSensors, useDraggable, DragOverlay,
@@ -487,7 +487,20 @@ export default function PlannerTab({
       setDropHint(null);
       return;
     }
-    setDropHint({ itemId: overId, position: computePosition(event.over.rect) });
+    const pos = computePosition(event.over.rect);
+    setDropHint(prev => (prev?.itemId === overId && prev?.position === pos ? prev : { itemId: overId, position: pos }));
+  };
+
+  // Fires on every pointermove during drag — keeps dropHint in sync when
+  // the cursor moves within the same droppable (handleDragOver only fires
+  // when `over` changes to a different target).
+  const handleDragMove = (event: DragMoveEvent) => {
+    if (event.active.data.current?.type !== 'sidebar') return;
+    if (!event.over) { setDropHint(null); return; }
+    const overId = String(event.over.id);
+    if (!showItems.some(si => si.id === overId)) { setDropHint(null); return; }
+    const newPos = computePosition(event.over.rect);
+    setDropHint(prev => (prev?.itemId === overId && prev?.position === newPos ? prev : { itemId: overId, position: newPos }));
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -549,6 +562,7 @@ export default function PlannerTab({
       sensors={sensors}
       collisionDetection={closestCenter}
       onDragStart={handleDragStart}
+      onDragMove={handleDragMove}
       onDragOver={handleDragOver}
       onDragEnd={handleDragEnd}
       onDragCancel={handleDragCancel}
@@ -699,6 +713,7 @@ export default function PlannerTab({
                 effectiveDurations={effectiveDurations}
                 totalTime={totalTime}
                 onEditItem={id => setEditingItemId(id)}
+                dropHint={dropHint}
               />
             </div>
           ) : (
