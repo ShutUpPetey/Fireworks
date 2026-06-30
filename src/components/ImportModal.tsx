@@ -174,6 +174,14 @@ export default function ImportModal({ onImport, onClose }: Props) {
               <Upload size={40} className="mx-auto mb-4 text-slate-400" />
               <p className="text-slate-300 font-medium mb-1">Drop your file here or click to browse</p>
               <p className="text-slate-500 text-sm">Supports Excel (.xlsx, .xls) and CSV files</p>
+              <a
+                href="fireworks-import-template.xlsx"
+                download
+                onClick={e => e.stopPropagation()}
+                className="inline-flex items-center gap-1.5 mt-4 text-sm text-blue-400 hover:text-blue-300 underline underline-offset-2"
+              >
+                ↓ Download blank template
+              </a>
               {error && (
                 <p className="mt-4 text-red-400 flex items-center justify-center gap-2">
                   <AlertCircle size={16} /> {error}
