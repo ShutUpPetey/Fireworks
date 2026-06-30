@@ -71,11 +71,17 @@ export default function App() {
           <PlannerTab
             fireworks={store.fireworks}
             showItems={store.showItems}
+            overlapSeconds={store.overlapSeconds}
             onAdd={store.addShowItem}
+            onAddMany={store.addShowItems}
             onUpdate={store.updateShowItem}
             onRemove={store.removeShowItem}
             onReorder={store.reorderShowItems}
             onClear={store.clearShow}
+            onSetOverlap={store.setOverlap}
+            onAddSimultaneous={store.addSimultaneous}
+            onUpdateSimultaneous={store.updateSimultaneous}
+            onRemoveSimultaneous={store.removeSimultaneous}
           />
         )}
         {tab === 'cues' && (
@@ -83,6 +89,7 @@ export default function App() {
             fireworks={store.fireworks}
             showItems={store.showItems}
             onUpdate={store.updateShowItem}
+            onUpdateSimultaneous={store.updateSimultaneous}
           />
         )}
       </main>

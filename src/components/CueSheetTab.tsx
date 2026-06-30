@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react';
-import { Printer, Wand2, AlertCircle, Grid3X3, List } from 'lucide-react';
-import type { Firework, ShowItem } from '../types';
+import { Printer, Wand2, AlertCircle, Grid3X3, List, Link2 } from 'lucide-react';
+import type { Firework, ShowItem, SimultaneousItem } from '../types';
 import {
   LOCATIONS, PHASE_LABELS, PHASE_COLORS,
   FIREWORK_TYPE_LABELS, TYPE_COLORS, formatDuration, formatTime, parseCue,
@@ -10,21 +10,25 @@ interface Props {
   fireworks: Firework[];
   showItems: ShowItem[];
   onUpdate: (item: ShowItem) => void;
+  onUpdateSimultaneous: (showItemId: string, sim: SimultaneousItem) => void;
 }
 
 type ViewMode = 'list' | 'grid';
 
-export default function CueSheetTab({ fireworks, showItems, onUpdate }: Props) {
+export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSimultaneous }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
 
-  // Compute running times
+  // Compute running times (using max of simultaneous durations per slot)
   const timings = useMemo(() => {
     let t = 0;
     return showItems.map(si => {
       t += si.gapBefore;
       const start = t;
       const fw = fireworks.find(f => f.id === si.fireworkId);
-      if (fw) t += fw.duration;
+      const simMax = (si.simultaneous ?? [])
+        .map(s => fireworks.find(f => f.id === s.fireworkId)?.duration ?? 0)
+        .reduce((a, b) => Math.max(a, b), 0);
+      if (fw) t += Math.max(fw.duration, simMax);
       return start;
     });
   }, [showItems, fireworks]);
@@ -161,10 +165,12 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate }: Props) {
                   const fw = fireworks.find(f => f.id === item.fireworkId);
                   if (!fw) return null;
                   const pc = PHASE_COLORS[fw.phase];
+                  const sims = item.simultaneous ?? [];
                   return (
+                    <>
                     <tr key={item.id} className="hover:bg-slate-800/30 group">
-                      <td className="px-4 py-2.5 text-slate-500 font-mono">{idx + 1}</td>
-                      <td className="px-4 py-2.5 text-slate-400 font-mono text-xs">
+                      <td className="px-4 py-2.5 text-slate-500 font-mono" rowSpan={sims.length + 1}>{idx + 1}</td>
+                      <td className="px-4 py-2.5 text-slate-400 font-mono text-xs" rowSpan={sims.length + 1}>
                         {formatTime(timings[idx] ?? 0)}
                       </td>
                       <td className="px-4 py-2.5">
@@ -207,6 +213,54 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate }: Props) {
                         />
                       </td>
                     </tr>
+                    {/* Simultaneous sub-rows */}
+                    {sims.map(sim => {
+                      const sfw = fireworks.find(f => f.id === sim.fireworkId);
+                      if (!sfw) return null;
+                      const spc = PHASE_COLORS[sfw.phase];
+                      return (
+                        <tr key={sim.id} className="bg-slate-900/40 border-t border-slate-800/50">
+                          <td className="px-4 py-1.5">
+                            <div className="flex items-center gap-1.5">
+                              <Link2 size={11} className="text-slate-500 shrink-0" />
+                              <span className="text-slate-300 text-xs">{sfw.name}</span>
+                            </div>
+                          </td>
+                          <td className="px-4 py-1.5">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[sfw.type]}`}>
+                              {FIREWORK_TYPE_LABELS[sfw.type]}
+                            </span>
+                          </td>
+                          <td className="px-4 py-1.5">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${spc.badge}`}>
+                              {PHASE_LABELS[sfw.phase]}
+                            </span>
+                          </td>
+                          <td className="px-4 py-1.5 text-right text-slate-500 font-mono text-xs">
+                            {formatDuration(sfw.duration)}
+                          </td>
+                          <td className="px-4 py-1.5 text-center">
+                            <input
+                              className="w-20 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm font-mono text-white focus:outline-none focus:border-blue-500"
+                              placeholder="cue"
+                              value={sim.cue}
+                              onChange={e => onUpdateSimultaneous(item.id, { ...sim, cue: e.target.value })}
+                            />
+                          </td>
+                          <td className="px-4 py-1.5 text-center">
+                            <select
+                              className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500"
+                              value={sim.location}
+                              onChange={e => onUpdateSimultaneous(item.id, { ...sim, location: e.target.value })}
+                            >
+                              {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+                            </select>
+                          </td>
+                          <td className="px-4 py-1.5 text-xs text-slate-500 italic">simultaneous</td>
+                        </tr>
+                      );
+                    })}
+                    </>
                   );
                 })}
               </tbody>

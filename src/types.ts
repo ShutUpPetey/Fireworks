@@ -13,6 +13,13 @@ export interface Firework {
   quantity: number;
 }
 
+export interface SimultaneousItem {
+  id: string;
+  fireworkId: string;
+  cue: string;
+  location: string;
+}
+
 export interface ShowItem {
   id: string;
   fireworkId: string;
@@ -20,6 +27,7 @@ export interface ShowItem {
   location: string;  // FC, FL, FR, BL, BR, TRAIL, etc.
   showNotes: string;
   gapBefore: number; // seconds pause before this fires
+  simultaneous: SimultaneousItem[]; // fires at same time as this item
 }
 
 export const FIREWORK_TYPE_LABELS: Record<FireworkType, string> = {
