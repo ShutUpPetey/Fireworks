@@ -11,11 +11,12 @@ interface Props {
   timings: number[];
   effectiveDurations: number[];
   totalTime: number;
+  onEditItem?: (id: string) => void;
 }
 
 const LABEL_W = 196;
 
-export default function GanttView({ fireworks, showItems, overlapSeconds, timings, totalTime }: Props) {
+export default function GanttView({ fireworks, showItems, overlapSeconds, timings, totalTime, onEditItem }: Props) {
   const [pxPerSec, setPxPerSec] = useState(2);
 
   const zoomIn  = () => setPxPerSec(p => Math.min(12, +(p * 1.6).toFixed(2)));
@@ -140,13 +141,14 @@ export default function GanttView({ fireworks, showItems, overlapSeconds, timing
 
                   {/* Primary bar */}
                   <div
-                    className={`absolute top-2 rounded flex items-center gap-1 px-2 border ${pc.bg} ${pc.border} overflow-hidden`}
+                    className={`absolute top-2 rounded flex items-center gap-1 px-2 border ${pc.bg} ${pc.border} overflow-hidden ${onEditItem ? 'cursor-pointer hover:brightness-125 transition-[filter]' : ''}`}
                     style={{
                       left: start * pxPerSec,
                       width: Math.max(fw.duration * pxPerSec, 6),
                       height: 32,
                     }}
-                    title={`${fw.name} · ${formatDuration(fw.duration)} · ${FIREWORK_TYPE_LABELS[fw.type]}`}
+                    title={onEditItem ? `${fw.name} — tap to edit` : `${fw.name} · ${formatDuration(fw.duration)} · ${FIREWORK_TYPE_LABELS[fw.type]}`}
+                    onClick={() => onEditItem?.(item.id)}
                   >
                     {fw.duration * pxPerSec > 36 && (
                       <span className={`text-xs font-medium truncate ${pc.text}`}>{fw.name}</span>

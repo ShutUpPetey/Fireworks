@@ -117,6 +117,16 @@ export function useStore() {
   const addShowItems = (items: ShowItem[]) =>
     setState(s => ({ ...s, showItems: [...s.showItems, ...items] }));
 
+  const insertShowItemAt = (item: ShowItem, index: number) =>
+    setState(s => ({
+      ...s,
+      showItems: [
+        ...s.showItems.slice(0, index),
+        item,
+        ...s.showItems.slice(index),
+      ],
+    }));
+
   const updateShowItem = (item: ShowItem) =>
     setState(s => ({ ...s, showItems: s.showItems.map(si => si.id === item.id ? item : si) }));
 
@@ -176,6 +186,7 @@ export function useStore() {
     importFireworks,
     addShowItem,
     addShowItems,
+    insertShowItemAt,
     updateShowItem,
     removeShowItem,
     reorderShowItems,

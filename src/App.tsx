@@ -162,6 +162,7 @@ export default function App() {
             overlapSeconds={store.overlapSeconds}
             onAdd={store.addShowItem}
             onAddMany={store.addShowItems}
+            onInsertAt={store.insertShowItemAt}
             onUpdate={store.updateShowItem}
             onRemove={store.removeShowItem}
             onReorder={store.reorderShowItems}

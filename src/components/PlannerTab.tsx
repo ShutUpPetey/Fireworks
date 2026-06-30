@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 import type { DragEndEvent, DragStartEvent, DragOverEvent } from '@dnd-kit/core';
 import {
   DndContext, closestCenter, KeyboardSensor, PointerSensor,
@@ -12,7 +12,7 @@ import { CSS } from '@dnd-kit/utilities';
 import { v4 as uuid } from 'uuid';
 import {
   GripVertical, Plus, X, Clock, DollarSign,
-  ChevronDown, Pause, Info, Link2, Unlink, List, BarChart2,
+  ChevronDown, Pause, Info, Link2, Unlink, List, BarChart2, Pencil,
 } from 'lucide-react';
 import type { Firework, ShowItem, SimultaneousItem } from '../types';
 import {
@@ -27,6 +27,7 @@ interface Props {
   overlapSeconds: number;
   onAdd: (item: ShowItem) => void;
   onAddMany: (items: ShowItem[]) => void;
+  onInsertAt: (item: ShowItem, index: number) => void;
   onUpdate: (item: ShowItem) => void;
   onRemove: (id: string) => void;
   onReorder: (items: ShowItem[]) => void;
@@ -37,10 +38,117 @@ interface Props {
   onRemoveSimultaneous: (showItemId: string, simId: string) => void;
 }
 
+type DropHint = { itemId: string; position: 'before' | 'after' | 'on' } | null;
+
+// ── Insert position line ───────────────────────────────────────────────
+function InsertLine() {
+  return (
+    <div className="flex items-center pointer-events-none relative z-20 -my-px">
+      <div className="shrink-0" style={{ width: 88 }} />
+      <div className="w-2.5 h-2.5 rounded-full bg-blue-500 shrink-0 -ml-1" />
+      <div className="flex-1 h-0.5 bg-blue-500 rounded-full" />
+    </div>
+  );
+}
+
+// ── Edit item modal ────────────────────────────────────────────────────
+function EditItemModal({ item, fw, onUpdate, onClose }: {
+  item: ShowItem;
+  fw: Firework;
+  onUpdate: (item: ShowItem) => void;
+  onClose: () => void;
+}) {
+  const [draft, setDraft] = useState(item);
+
+  const save = () => { onUpdate(draft); onClose(); };
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-black/60"
+      onClick={onClose}
+    >
+      <div
+        className="w-full max-w-md bg-slate-800 rounded-t-2xl md:rounded-2xl border border-slate-700 shadow-2xl p-5"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between mb-4">
+          <div>
+            <h3 className="text-white font-semibold text-base">{fw.name}</h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              {FIREWORK_TYPE_LABELS[fw.type]} · {formatDuration(fw.duration)}
+            </p>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white p-1.5 -mt-1 -mr-1">
+            <X size={18} />
+          </button>
+        </div>
+
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs text-slate-400 mb-1.5">Cue #</label>
+              <input
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+                placeholder="1.1"
+                value={draft.cue}
+                onChange={e => setDraft(d => ({ ...d, cue: e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1.5">Location</label>
+              <select
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                value={draft.location}
+                onChange={e => setDraft(d => ({ ...d, location: e.target.value }))}
+              >
+                {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">Pause before (seconds)</label>
+            <input
+              type="number" min="0" max="300"
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500"
+              value={draft.gapBefore}
+              onChange={e => setDraft(d => ({ ...d, gapBefore: parseInt(e.target.value) || 0 }))}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-slate-400 mb-1.5">Show notes</label>
+            <input
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500"
+              placeholder="Notes for the operator…"
+              value={draft.showNotes}
+              onChange={e => setDraft(d => ({ ...d, showNotes: e.target.value }))}
+            />
+          </div>
+        </div>
+
+        <div className="flex gap-3 mt-5">
+          <button
+            onClick={onClose}
+            className="flex-1 bg-slate-700 hover:bg-slate-600 text-white rounded-xl py-3 text-sm font-medium transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={save}
+            className="flex-1 bg-blue-600 hover:bg-blue-500 text-white rounded-xl py-3 text-sm font-medium transition-colors"
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Simultaneous sub-card ──────────────────────────────────────────────
 function SimCard({
-  sim, fw, showItemId,
-  onUpdate, onRemove,
+  sim, fw, showItemId, onUpdate, onRemove,
 }: {
   sim: SimultaneousItem;
   fw: Firework | undefined;
@@ -50,7 +158,7 @@ function SimCard({
 }) {
   if (!fw) return null;
   return (
-    <div className="flex items-center gap-2 px-3 py-1.5 border-t border-black/20 bg-black/10">
+    <div className="flex items-center gap-2 px-3 py-2 border-t border-black/20 bg-black/10">
       <Link2 size={11} className="text-slate-400 shrink-0" />
       <span className="text-xs text-white font-medium truncate flex-1">{fw.name}</span>
       <span className={`text-xs px-1.5 py-0.5 rounded shrink-0 ${TYPE_COLORS[fw.type]}`}>
@@ -58,20 +166,23 @@ function SimCard({
       </span>
       <span className="text-xs font-mono text-slate-400 shrink-0">{formatDuration(fw.duration)}</span>
       <input
-        className="w-16 bg-slate-900/60 border border-slate-600 rounded px-1.5 py-0.5 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
+        className="w-16 bg-slate-900/60 border border-slate-600 rounded px-1.5 py-1 text-xs font-mono text-white focus:outline-none focus:border-blue-500"
         placeholder="cue"
         value={sim.cue}
         onChange={e => onUpdate(showItemId, { ...sim, cue: e.target.value })}
       />
       <select
-        className="bg-slate-900/60 border border-slate-600 rounded px-1.5 py-0.5 text-xs text-white focus:outline-none"
+        className="bg-slate-900/60 border border-slate-600 rounded px-1.5 py-1 text-xs text-white focus:outline-none"
         value={sim.location}
         onChange={e => onUpdate(showItemId, { ...sim, location: e.target.value })}
       >
         {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
       </select>
-      <button onClick={() => onRemove(showItemId, sim.id)} className="text-slate-500 hover:text-red-400 p-0.5">
-        <X size={12} />
+      <button
+        onClick={() => onRemove(showItemId, sim.id)}
+        className="text-slate-500 hover:text-red-400 p-1.5 shrink-0"
+      >
+        <X size={13} />
       </button>
     </div>
   );
@@ -98,10 +209,10 @@ function DraggableFireworkCard({ fw, qty, onSetQty, onClickAdd }: {
         <div
           {...attributes}
           {...listeners}
-          className="cursor-grab active:cursor-grabbing px-2 py-3 text-slate-500 hover:text-slate-300 touch-none shrink-0"
-          title="Drag to add · drop onto an item to fire simultaneously"
+          className="cursor-grab active:cursor-grabbing px-2 py-3.5 text-slate-500 hover:text-slate-300 touch-none shrink-0"
+          title="Drag to add · drop onto item to fire simultaneously · drop between items to insert"
         >
-          <GripVertical size={14} />
+          <GripVertical size={15} />
         </div>
         <button
           onClick={onClickAdd}
@@ -118,11 +229,11 @@ function DraggableFireworkCard({ fw, qty, onSetQty, onClickAdd }: {
         </button>
       </div>
 
-      <div className="flex items-center gap-1 px-3 pb-2">
+      <div className="flex items-center gap-1 px-3 pb-2.5">
         <span className="text-xs text-slate-500 mr-1">Qty:</span>
         <button
           onClick={() => onSetQty(qty - 1)}
-          className="w-5 h-5 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs flex items-center justify-center leading-none"
+          className="w-6 h-6 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs flex items-center justify-center"
         >−</button>
         <input
           type="number" min="1" max="20"
@@ -133,7 +244,7 @@ function DraggableFireworkCard({ fw, qty, onSetQty, onClickAdd }: {
         />
         <button
           onClick={() => onSetQty(qty + 1)}
-          className="w-5 h-5 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs flex items-center justify-center leading-none"
+          className="w-6 h-6 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs flex items-center justify-center"
         >+</button>
         {qty > 1 && <span className="text-xs text-blue-400 ml-1">×{qty}</span>}
       </div>
@@ -150,21 +261,20 @@ interface RowProps {
   index: number;
   fireworks: Firework[];
   onRemove: (id: string) => void;
-  onUpdate: (item: ShowItem) => void;
   onUpdateSimultaneous: (showItemId: string, sim: SimultaneousItem) => void;
   onRemoveSimultaneous: (showItemId: string, simId: string) => void;
   maxDuration: number;
-  isDropTarget: boolean;
+  isSimDropTarget: boolean;
+  onEditItem: () => void;
 }
 
 function SortableRow({
   item, fw, startTime, effectiveDuration, index, fireworks,
-  onRemove, onUpdate,
+  onRemove,
   onUpdateSimultaneous, onRemoveSimultaneous,
-  maxDuration, isDropTarget,
+  maxDuration, isSimDropTarget, onEditItem,
 }: RowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
-  const [editGap, setEditGap] = useState(false);
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -179,7 +289,7 @@ function SortableRow({
   return (
     <div ref={setNodeRef} style={style} className={`flex gap-0 ${isDragging ? 'z-50' : ''}`}>
       {/* Time ruler */}
-      <div className="w-16 shrink-0 flex flex-col items-end pr-2 pt-3">
+      <div className="w-16 shrink-0 flex flex-col items-end pr-2 pt-3.5">
         <span className="text-xs font-mono text-slate-500">{formatTime(startTime)}</span>
       </div>
 
@@ -190,9 +300,9 @@ function SortableRow({
       </div>
 
       {/* Card */}
-      <div className={`flex-1 mb-2 rounded-lg border ${pc.border} ${pc.bg} overflow-hidden relative ${isDropTarget ? 'ring-2 ring-blue-400' : ''}`}>
-        {/* Drop-to-pair overlay */}
-        {isDropTarget && (
+      <div className={`flex-1 mb-2 rounded-lg border ${pc.border} ${pc.bg} overflow-hidden relative ${isSimDropTarget ? 'ring-2 ring-blue-400' : ''}`}>
+        {/* Simultaneous drop overlay */}
+        {isSimDropTarget && (
           <div className="absolute inset-0 bg-blue-500/10 flex items-center justify-center z-10 pointer-events-none">
             <div className="flex items-center gap-2 bg-blue-900/90 rounded-lg px-3 py-1.5 border border-blue-500 shadow-lg">
               <Link2 size={12} className="text-blue-300" />
@@ -209,9 +319,11 @@ function SortableRow({
         )}
 
         {/* Main row */}
-        <div className="flex items-center gap-2 px-3 py-2">
-          <button {...attributes} {...listeners}
-            className="cursor-grab active:cursor-grabbing text-slate-500 hover:text-slate-300 shrink-0 touch-none">
+        <div className="flex items-center gap-2 px-3 py-2.5">
+          <button
+            {...attributes} {...listeners}
+            className="cursor-grab active:cursor-grabbing text-slate-500 hover:text-slate-300 shrink-0 touch-none p-1"
+          >
             <GripVertical size={16} />
           </button>
 
@@ -232,42 +344,36 @@ function SortableRow({
             </div>
             <div className="flex items-center gap-2 mt-1">
               <div className="flex-1 h-1.5 bg-slate-900/50 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full ${pc.text} bg-current opacity-70`}
-                  style={{ width: `${barWidth}%` }} />
+                <div
+                  className={`h-full rounded-full ${pc.text} bg-current opacity-70`}
+                  style={{ width: `${barWidth}%` }}
+                />
               </div>
               <span className="text-xs font-mono text-slate-400 shrink-0">{formatDuration(effectiveDuration)}</span>
             </div>
           </div>
 
-          {item.location && (
+          {item.location && item.location !== 'FC' && (
             <span className="text-xs text-slate-400 font-mono shrink-0">{item.location}</span>
           )}
 
-          {/* Gap */}
-          <button onClick={() => setEditGap(g => !g)}
-            className="p-1 text-slate-500 hover:text-slate-300 transition-colors shrink-0" title="Set gap before">
-            <Pause size={12} />
+          {/* Edit */}
+          <button
+            onClick={onEditItem}
+            className="p-2 text-slate-500 hover:text-blue-400 transition-colors shrink-0"
+            title="Edit item"
+          >
+            <Pencil size={13} />
           </button>
 
           {/* Remove */}
-          <button onClick={() => onRemove(item.id)}
-            className="p-1 text-slate-500 hover:text-red-400 transition-colors shrink-0">
-            <X size={14} />
+          <button
+            onClick={() => onRemove(item.id)}
+            className="p-2 text-slate-500 hover:text-red-400 transition-colors shrink-0"
+          >
+            <X size={15} />
           </button>
         </div>
-
-        {/* Gap editor */}
-        {editGap && (
-          <div className="flex items-center gap-3 px-3 py-2 bg-black/20 border-t border-slate-700/50">
-            <Pause size={12} className="text-slate-400 shrink-0" />
-            <label className="text-xs text-slate-400">Pause before (sec):</label>
-            <input type="number" min="0" max="300"
-              className="w-20 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
-              value={item.gapBefore}
-              onChange={e => onUpdate({ ...item, gapBefore: parseInt(e.target.value) || 0 })} />
-            <button onClick={() => setEditGap(false)} className="text-xs text-blue-400 hover:text-blue-300">Done</button>
-          </div>
-        )}
 
         {/* Simultaneous sub-cards */}
         {(item.simultaneous ?? []).map(sim => (
@@ -297,7 +403,7 @@ const PHASE_ORDER = ['start', 'body', 'mid_finale', 'finale', 'other'] as const;
 
 export default function PlannerTab({
   fireworks, showItems, overlapSeconds,
-  onAdd, onAddMany, onUpdate, onRemove, onReorder, onClear,
+  onAdd, onAddMany, onInsertAt, onUpdate, onRemove, onReorder, onClear,
   onSetOverlap, onAddSimultaneous, onUpdateSimultaneous, onRemoveSimultaneous,
 }: Props) {
   const [sidebarPhase, setSidebarPhase] = useState<typeof PHASE_ORDER[number]>('start');
@@ -305,10 +411,19 @@ export default function PlannerTab({
   const [qtys, setQtys] = useState<Record<string, number>>({});
   const [viewMode, setViewMode] = useState<'list' | 'gantt'>('list');
   const [activeSidebarFwId, setActiveSidebarFwId] = useState<string | null>(null);
-  const [dragOverItemId, setDragOverItemId] = useState<string | null>(null);
+  const [dropHint, setDropHint] = useState<DropHint>(null);
+  const [editingItemId, setEditingItemId] = useState<string | null>(null);
+
+  // Track live pointer Y for accurate 3-zone drop detection
+  const pointerYRef = useRef(0);
+  useEffect(() => {
+    const handler = (e: PointerEvent) => { pointerYRef.current = e.clientY; };
+    window.addEventListener('pointermove', handler, { passive: true });
+    return () => window.removeEventListener('pointermove', handler);
+  }, []);
 
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
 
@@ -334,8 +449,7 @@ export default function PlannerTab({
       timings.push(t);
       const fw = fireworks.find(f => f.id === si.fireworkId);
       if (fw) cost += fw.cost;
-      const dur = effectiveDurations[idx] ?? 0;
-      t += Math.max(0, dur - overlapSeconds);
+      t += Math.max(0, (effectiveDurations[idx] ?? 0) - overlapSeconds);
     });
     return { timings, totalTime: t, totalCost: cost };
   }, [showItems, fireworks, effectiveDurations, overlapSeconds]);
@@ -347,6 +461,15 @@ export default function PlannerTab({
     showNotes: '', gapBefore: 0, simultaneous: [],
   });
 
+  // Compute drop zone (top ⅓ = before, middle ⅓ = on/simultaneous, bottom ⅓ = after)
+  const computePosition = (overRect: { top: number; height: number }): 'before' | 'on' | 'after' => {
+    const relY = pointerYRef.current - overRect.top;
+    const frac = overRect.height > 0 ? relY / overRect.height : 0.5;
+    if (frac < 0.33) return 'before';
+    if (frac > 0.67) return 'after';
+    return 'on';
+  };
+
   const handleDragStart = (event: DragStartEvent) => {
     if (event.active.data.current?.type === 'sidebar') {
       setActiveSidebarFwId(event.active.data.current.fireworkId as string);
@@ -354,12 +477,16 @@ export default function PlannerTab({
   };
 
   const handleDragOver = (event: DragOverEvent) => {
-    if (event.active.data.current?.type === 'sidebar' && event.over) {
-      const overId = String(event.over.id);
-      setDragOverItemId(showItems.some(si => si.id === overId) ? overId : null);
-    } else {
-      setDragOverItemId(null);
+    if (event.active.data.current?.type !== 'sidebar' || !event.over) {
+      setDropHint(null);
+      return;
     }
+    const overId = String(event.over.id);
+    if (!showItems.some(si => si.id === overId)) {
+      setDropHint(null);
+      return;
+    }
+    setDropHint({ itemId: overId, position: computePosition(event.over.rect) });
   };
 
   const handleDragEnd = (event: DragEndEvent) => {
@@ -369,16 +496,28 @@ export default function PlannerTab({
       const fwId = active.data.current.fireworkId as string;
       const fw = fireworks.find(f => f.id === fwId);
       if (fw) {
-        const overId = over ? String(over.id) : null;
-        if (overId && showItems.some(si => si.id === overId)) {
-          onAddSimultaneous(overId, fw);
-        } else {
-          const qty = getQty(fwId);
-          if (qty === 1) {
-            onAdd(makeShowItem(fw));
-          } else {
-            onAddMany(Array.from({ length: qty }, () => makeShowItem(fw)));
+        if (over) {
+          const overId = String(over.id);
+          const targetIdx = showItems.findIndex(si => si.id === overId);
+          if (targetIdx !== -1) {
+            const position = computePosition(over.rect);
+            if (position === 'on') {
+              onAddSimultaneous(overId, fw);
+            } else {
+              const insertIdx = position === 'before' ? targetIdx : targetIdx + 1;
+              onInsertAt(makeShowItem(fw), insertIdx);
+            }
+            setActiveSidebarFwId(null);
+            setDropHint(null);
+            return;
           }
+        }
+        // No drop target — append to end
+        const qty = getQty(fwId);
+        if (qty === 1) {
+          onAdd(makeShowItem(fw));
+        } else {
+          onAddMany(Array.from({ length: qty }, () => makeShowItem(fw)));
         }
       }
     } else if (over && active.id !== over.id) {
@@ -390,16 +529,19 @@ export default function PlannerTab({
     }
 
     setActiveSidebarFwId(null);
-    setDragOverItemId(null);
+    setDropHint(null);
   };
 
   const handleDragCancel = () => {
     setActiveSidebarFwId(null);
-    setDragOverItemId(null);
+    setDropHint(null);
   };
 
   const activeSidebarFw = activeSidebarFwId ? fireworks.find(f => f.id === activeSidebarFwId) : null;
   const sidebarFws = fireworks.filter(fw => fw.phase === sidebarPhase);
+
+  const editingItem = editingItemId ? showItems.find(si => si.id === editingItemId) : null;
+  const editingFw = editingItem ? fireworks.find(f => f.id === editingItem.fireworkId) : null;
 
   return (
     <DndContext
@@ -425,14 +567,13 @@ export default function PlannerTab({
 
           {sidebarOpen && (
             <>
-              {/* Phase tabs */}
               <div className="flex flex-col border-b border-slate-700">
                 {PHASE_ORDER.map(phase => {
                   const pc = PHASE_COLORS[phase];
                   const count = fireworks.filter(fw => fw.phase === phase).length;
                   return (
                     <button key={phase} onClick={() => setSidebarPhase(phase)}
-                      className={`flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors border-l-2 ${
+                      className={`flex items-center justify-between px-3 py-2.5 text-xs font-medium transition-colors border-l-2 ${
                         sidebarPhase === phase
                           ? `${pc.text} border-current bg-slate-800`
                           : 'text-slate-400 border-transparent hover:bg-slate-800/50'
@@ -444,14 +585,12 @@ export default function PlannerTab({
                 })}
               </div>
 
-              {/* Hint */}
               <div className="px-3 py-1.5 bg-slate-900/40 border-b border-slate-700/50">
                 <p className="text-[10px] text-slate-500 leading-snug">
-                  Click to add · Drag to add · Drag onto item to fire together
+                  Click to add · Drag onto item → fire together · Drag between items → insert there
                 </p>
               </div>
 
-              {/* Fireworks list */}
               <div className="flex-1 overflow-y-auto p-2 space-y-1">
                 {sidebarFws.length === 0 ? (
                   <p className="text-xs text-slate-500 text-center py-6 px-2">
@@ -483,20 +622,20 @@ export default function PlannerTab({
         {/* ── Main area ── */}
         <div className="flex-1 flex flex-col overflow-hidden">
           {/* Header */}
-          <div className="flex items-center gap-4 px-4 py-3 border-b border-slate-700 bg-slate-800/30 flex-wrap">
+          <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-700 bg-slate-800/30 flex-wrap">
             <div className="flex items-center gap-2 text-sm text-slate-400">
               <Clock size={14} />
               <span>Total: <span className="text-white font-mono font-semibold">{formatTime(totalTime)}</span></span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-slate-400">
-              <span>Items: <span className="text-white font-semibold">{showItems.length}</span></span>
+            <div className="text-sm text-slate-400">
+              Items: <span className="text-white font-semibold">{showItems.length}</span>
             </div>
-            <div className="flex items-center gap-2 text-sm text-slate-400">
+            <div className="flex items-center gap-1 text-sm text-slate-400">
               <DollarSign size={14} />
               <span>Cost: <span className="text-emerald-400 font-semibold">${totalCost.toFixed(2)}</span></span>
             </div>
 
-            {/* Overlap control */}
+            {/* Overlap */}
             <div className="flex items-center gap-2 bg-slate-800 border border-slate-700 rounded-lg px-3 py-1.5">
               <Unlink size={13} className="text-slate-400 shrink-0" />
               <label className="text-xs text-slate-400 whitespace-nowrap">Overlap:</label>
@@ -558,6 +697,7 @@ export default function PlannerTab({
                 timings={timings}
                 effectiveDurations={effectiveDurations}
                 totalTime={totalTime}
+                onEditItem={id => setEditingItemId(id)}
               />
             </div>
           ) : (
@@ -566,28 +706,36 @@ export default function PlannerTab({
                 <div className="flex flex-col items-center justify-center h-64 text-slate-500">
                   <span className="text-5xl mb-4">🎇</span>
                   <p className="text-lg font-medium mb-2">Show is empty</p>
-                  <p className="text-sm">Click or drag fireworks from the sidebar · drag onto an item to fire together</p>
+                  <p className="text-sm text-center px-4">
+                    Click sidebar items to add · drag between rows to insert · drag onto a row to fire simultaneously
+                  </p>
                 </div>
               ) : (
                 <SortableContext items={showItems.map(i => i.id)} strategy={verticalListSortingStrategy}>
-                  <div className="space-y-0">
-                    {showItems.map((item, idx) => (
-                      <SortableRow
-                        key={item.id}
-                        item={item}
-                        fw={fireworks.find(f => f.id === item.fireworkId)}
-                        startTime={timings[idx] ?? 0}
-                        effectiveDuration={effectiveDurations[idx] ?? 0}
-                        index={idx}
-                        fireworks={fireworks}
-                        onRemove={onRemove}
-                        onUpdate={onUpdate}
-                        onUpdateSimultaneous={onUpdateSimultaneous}
-                        onRemoveSimultaneous={onRemoveSimultaneous}
-                        maxDuration={maxDuration}
-                        isDropTarget={dragOverItemId === item.id}
-                      />
-                    ))}
+                  <div>
+                    {showItems.map((item, idx) => {
+                      const hint = dropHint?.itemId === item.id ? dropHint : null;
+                      return (
+                        <React.Fragment key={item.id}>
+                          {hint?.position === 'before' && <InsertLine />}
+                          <SortableRow
+                            item={item}
+                            fw={fireworks.find(f => f.id === item.fireworkId)}
+                            startTime={timings[idx] ?? 0}
+                            effectiveDuration={effectiveDurations[idx] ?? 0}
+                            index={idx}
+                            fireworks={fireworks}
+                            onRemove={onRemove}
+                            onUpdateSimultaneous={onUpdateSimultaneous}
+                            onRemoveSimultaneous={onRemoveSimultaneous}
+                            maxDuration={maxDuration}
+                            isSimDropTarget={hint?.position === 'on'}
+                            onEditItem={() => setEditingItemId(item.id)}
+                          />
+                          {hint?.position === 'after' && <InsertLine />}
+                        </React.Fragment>
+                      );
+                    })}
                     {/* End marker */}
                     <div className="flex gap-0 pt-1">
                       <div className="w-16 shrink-0 flex items-end justify-end pr-2">
@@ -611,7 +759,7 @@ export default function PlannerTab({
       {/* Drag ghost for sidebar items */}
       <DragOverlay>
         {activeSidebarFw && (
-          <div className="flex items-center gap-2 bg-slate-700 border border-blue-500 rounded-lg px-3 py-2 shadow-xl opacity-95 pointer-events-none">
+          <div className="flex items-center gap-2 bg-slate-700 border border-blue-500 rounded-lg px-3 py-2.5 shadow-xl opacity-95 pointer-events-none">
             <GripVertical size={14} className="text-slate-400" />
             <div>
               <div className="text-xs font-medium text-white">{activeSidebarFw.name}</div>
@@ -620,6 +768,16 @@ export default function PlannerTab({
           </div>
         )}
       </DragOverlay>
+
+      {/* Edit modal */}
+      {editingItem && editingFw && (
+        <EditItemModal
+          item={editingItem}
+          fw={editingFw}
+          onUpdate={onUpdate}
+          onClose={() => setEditingItemId(null)}
+        />
+      )}
     </DndContext>
   );
 }
