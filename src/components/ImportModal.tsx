@@ -3,6 +3,7 @@ import { v4 as uuid } from 'uuid';
 import { X, Upload, AlertCircle, CheckCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import type { Firework, FireworkType, ShowPhase } from '../types';
+import { FIREWORK_TYPE_LABELS, PHASE_LABELS } from '../types';
 
 interface Props {
   onImport: (fws: Firework[]) => void;
@@ -57,8 +58,8 @@ export default function ImportModal({ onImport, onClose }: Props) {
     const reader = new FileReader();
     reader.onload = (e) => {
       try {
-        const data = e.target?.result;
-        const wb = XLSX.read(data, { type: 'binary' });
+        const data = e.target?.result as ArrayBuffer;
+        const wb = XLSX.read(data, { type: 'array' });
         const ws = wb.Sheets[wb.SheetNames[0]];
         const json = XLSX.utils.sheet_to_json<Record<string, string>>(ws, { defval: '' });
         if (!json.length) { setError('No data found in file'); return; }
@@ -88,7 +89,7 @@ export default function ImportModal({ onImport, onClose }: Props) {
         setError('Failed to parse file. Please use CSV or Excel (.xlsx) format.');
       }
     };
-    reader.readAsBinaryString(file);
+    reader.readAsArrayBuffer(file);
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -241,10 +242,10 @@ export default function ImportModal({ onImport, onClose }: Props) {
                     {preview.map(fw => (
                       <tr key={fw.id} className="hover:bg-slate-750">
                         <td className="px-3 py-2 text-white">{fw.name}</td>
-                        <td className="px-3 py-2 text-slate-300">{fw.type}</td>
+                        <td className="px-3 py-2 text-slate-300">{FIREWORK_TYPE_LABELS[fw.type]}</td>
                         <td className="px-3 py-2 text-slate-300">${fw.cost}</td>
                         <td className="px-3 py-2 text-slate-300">{fw.duration}s</td>
-                        <td className="px-3 py-2 text-slate-300">{fw.phase}</td>
+                        <td className="px-3 py-2 text-slate-300">{PHASE_LABELS[fw.phase]}</td>
                       </tr>
                     ))}
                   </tbody>

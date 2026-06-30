@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import { Printer, Wand2, AlertCircle, Grid3X3, List, Link2 } from 'lucide-react';
 import type { Firework, ShowItem, SimultaneousItem } from '../types';
 import {
@@ -167,8 +167,8 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                   const pc = PHASE_COLORS[fw.phase];
                   const sims = item.simultaneous ?? [];
                   return (
-                    <>
-                    <tr key={item.id} className="hover:bg-slate-800/30 group">
+                    <React.Fragment key={item.id}>
+                    <tr className="hover:bg-slate-800/30 group">
                       <td className="px-4 py-2.5 text-slate-500 font-mono" rowSpan={sims.length + 1}>{idx + 1}</td>
                       <td className="px-4 py-2.5 text-slate-400 font-mono text-xs" rowSpan={sims.length + 1}>
                         {formatTime(timings[idx] ?? 0)}
@@ -260,7 +260,7 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                         </tr>
                       );
                     })}
-                    </>
+                    </React.Fragment>
                   );
                 })}
               </tbody>

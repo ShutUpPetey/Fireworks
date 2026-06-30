@@ -24,3 +24,39 @@ body {
   from { opacity: 0; transform: translateY(-8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
+
+@media print {
+  /* Hide everything except the cue sheet content */
+  header, nav, [data-no-print] { display: none !important; }
+
+  body, #root {
+    background: white !important;
+    color: black !important;
+    font-size: 11pt;
+  }
+
+  /* Reset dark backgrounds to white */
+  table, thead, tbody, tr, th, td,
+  .bg-slate-900, .bg-slate-800, .bg-slate-700,
+  .bg-blue-950, .bg-red-950, .bg-emerald-950,
+  .bg-amber-950, .bg-amber-800 {
+    background: white !important;
+    color: black !important;
+  }
+
+  th { border-bottom: 1pt solid #999; }
+  td { border-bottom: 1pt solid #ddd; }
+
+  /* Make badges readable */
+  [class*="rounded-full"] {
+    background: #eee !important;
+    color: black !important;
+    border: 1pt solid #999;
+  }
+
+  /* Remove shadows and outlines */
+  * { box-shadow: none !important; text-shadow: none !important; }
+
+  /* Ensure full width */
+  main, .flex-1 { width: 100% !important; overflow: visible !important; }
+}
