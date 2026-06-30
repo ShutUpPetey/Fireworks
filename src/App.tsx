@@ -160,10 +160,8 @@ export default function App() {
             showItems={store.showItems}
             onAdd={store.addShowItem}
             onAddMany={store.addShowItems}
-            onInsertAt={store.insertShowItemAt}
             onUpdate={store.updateShowItem}
             onRemove={store.removeShowItem}
-            onReorder={store.reorderShowItems}
             onClear={store.clearShow}
             onAddSimultaneous={store.addSimultaneous}
             onUpdateSimultaneous={store.updateSimultaneous}

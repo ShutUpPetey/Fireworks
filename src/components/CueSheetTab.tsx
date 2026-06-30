@@ -18,14 +18,16 @@ type ViewMode = 'list' | 'grid';
 export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSimultaneous }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
 
-  // Each item carries its own absolute startTime — no derived chain needed
-  const timings = useMemo(() => showItems.map(si => si.startTime), [showItems]);
+  const sortedItems = useMemo(
+    () => [...showItems].sort((a, b) => a.startTime - b.startTime),
+    [showItems],
+  );
 
 
   const autoAssignCues = () => {
     if (!confirm('Auto-assign cue numbers? This will overwrite existing cues.')) return;
-    let rack1 = 1; // center rack counter
-    showItems.forEach(item => {
+    let rack1 = 1;
+    sortedItems.forEach(item => {
       const newCue = `1.${rack1}`;
       if (rack1 <= 12) {
         onUpdate({ ...item, cue: newCue });
@@ -48,7 +50,7 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
     return grid;
   }, [showItems, fireworks]);
 
-  const hasCues = showItems.some(si => si.cue);
+  const hasCues = sortedItems.some(si => si.cue);
 
   const CueInput = ({ item }: { item: ShowItem }) => {
     const [val, setVal] = useState(item.cue);
@@ -79,10 +81,10 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 md:gap-3 px-4 md:px-6 py-3 border-b border-slate-700">
         <div className="text-sm text-slate-400">
-          <span className="text-white font-semibold">{showItems.length}</span> items in show
+          <span className="text-white font-semibold">{sortedItems.length}</span> items in show
           {hasCues && (
             <span className="ml-3">
-              · <span className="text-white font-semibold">{showItems.filter(si => si.cue).length}</span> cued
+              · <span className="text-white font-semibold">{sortedItems.filter(si => si.cue).length}</span> cued
             </span>
           )}
         </div>
@@ -149,7 +151,7 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
-                {showItems.map((item, idx) => {
+                {sortedItems.map((item, idx) => {
                   const fw = fireworks.find(f => f.id === item.fireworkId);
                   if (!fw) return null;
                   const pc = PHASE_COLORS[fw.phase];
@@ -159,7 +161,7 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                     <tr className="hover:bg-slate-800/30 group">
                       <td className="px-4 py-2.5 text-slate-500 font-mono" rowSpan={sims.length + 1}>{idx + 1}</td>
                       <td className="px-4 py-2.5 text-slate-400 font-mono text-xs" rowSpan={sims.length + 1}>
-                        {formatTime(timings[idx] ?? 0)}
+                        {formatTime(item.startTime)}
                       </td>
                       <td className="px-4 py-2.5">
                         <span className="text-white font-medium">{fw.name}</span>

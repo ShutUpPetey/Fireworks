@@ -1,7 +1,6 @@
 import { useState } from 'react';
-import { ZoomIn, ZoomOut, GripVertical, Link2 } from 'lucide-react';
-import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { ZoomIn, ZoomOut, Link2 } from 'lucide-react';
+import { useDroppable } from '@dnd-kit/core';
 import type { Firework, ShowItem, SimultaneousItem } from '../types';
 import { PHASE_COLORS, formatDuration, formatTime } from '../types';
 
@@ -10,8 +9,6 @@ type DropHint = { itemId: string; position: 'before' | 'after' | 'on' } | null;
 interface Props {
   fireworks: Firework[];
   showItems: ShowItem[];
-  timings: number[];
-  effectiveDurations: number[];
   totalTime: number;
   onEditItem?: (id: string) => void;
   onUpdate?: (item: ShowItem) => void;
@@ -40,23 +37,20 @@ interface RowProps {
   item: ShowItem;
   fireworks: Firework[];
   idx: number;
-  start: number;
   pxPerSec: number;
   trackW: number;
   ticks: number[];
-  totalItems?: number; // unused but kept for API compat
-  totalTime?: number;  // unused but kept for API compat
   dropHint?: DropHint;
   onEditItem?: (id: string) => void;
   onUpdate?: (item: ShowItem) => void;
   onUpdateSimultaneous?: (showItemId: string, sim: SimultaneousItem) => void;
 }
 
-function SortableGanttRow({
-  item, fireworks, idx, start, pxPerSec, trackW, ticks,
+function DroppableGanttRow({
+  item, fireworks, idx, pxPerSec, trackW, ticks,
   dropHint, onEditItem, onUpdate, onUpdateSimultaneous,
 }: RowProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: item.id });
+  const { setNodeRef } = useDroppable({ id: item.id });
   const [liveStart, setLiveStart] = useState<number | null>(null);
   const [liveOffsets, setLiveOffsets] = useState<Record<string, number>>({});
 
@@ -68,14 +62,12 @@ function SortableGanttRow({
   const rowH = 44 + sims.length * 22;
   const hint = dropHint?.itemId === item.id ? dropHint : null;
   const isSimTarget = hint?.position === 'on';
-  const effectiveStart = liveStart ?? start;
+  const effectiveStart = liveStart ?? item.startTime;
 
-  // Drag the primary bar left/right to retime the cue's absolute start time.
-  // Small movement (<4px) is treated as a click → open edit modal.
   const handleBarPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
     e.stopPropagation();
     const startX = e.clientX;
-    const origTime = start;
+    const origTime = item.startTime;
     let moved = false;
     const pointerId = e.pointerId;
     const el = e.currentTarget;
@@ -103,7 +95,6 @@ function SortableGanttRow({
     window.addEventListener('pointerup', onUp);
   };
 
-  // Drag a simultaneous bar left/right to retime its offset from the parent's start.
   const handleSimPointerDown = (e: React.PointerEvent<HTMLDivElement>, sim: SimultaneousItem) => {
     if (!onUpdateSimultaneous) return;
     e.stopPropagation();
@@ -123,11 +114,7 @@ function SortableGanttRow({
       window.removeEventListener('pointermove', onMove);
       window.removeEventListener('pointerup', onUp);
       onUpdateSimultaneous(item.id, { ...sim, offset: compute(ev.clientX) });
-      setLiveOffsets(prev => {
-        const next = { ...prev };
-        delete next[sim.id];
-        return next;
-      });
+      setLiveOffsets(prev => { const next = { ...prev }; delete next[sim.id]; return next; });
     };
     window.addEventListener('pointermove', onMove);
     window.addEventListener('pointerup', onUp);
@@ -138,15 +125,9 @@ function SortableGanttRow({
       {hint?.position === 'before' && <GanttInsertLine />}
       <div
         ref={setNodeRef}
-        style={{
-          transform: CSS.Transform.toString(transform),
-          transition,
-          minHeight: rowH,
-          opacity: isDragging ? 0.4 : 1,
-        }}
+        style={{ minHeight: rowH }}
         className={`flex border-b border-slate-800/60 hover:bg-slate-800/20 transition-colors relative ${isSimTarget ? 'ring-1 ring-inset ring-blue-400' : ''}`}
       >
-        {/* Simultaneous-drop overlay */}
         {isSimTarget && (
           <div className="absolute inset-0 bg-blue-500/10 flex items-center justify-center z-10 pointer-events-none">
             <div className="flex items-center gap-2 bg-blue-900/90 rounded-lg px-3 py-1.5 border border-blue-500 shadow-lg">
@@ -157,24 +138,14 @@ function SortableGanttRow({
         )}
 
         {/* Label */}
-        <div
-          className="shrink-0 flex items-start gap-1 px-2 py-2 border-r border-slate-800"
-          style={{ width: LABEL_W, minWidth: LABEL_W }}
-        >
-          <button
-            {...attributes} {...listeners}
-            className="cursor-grab active:cursor-grabbing text-slate-600 hover:text-slate-400 shrink-0 touch-none p-1 mt-0.5"
-            title="Drag to reorder cue numbers"
-          >
-            <GripVertical size={13} />
-          </button>
-          <span className="text-xs font-mono text-slate-600 w-4 shrink-0 pt-0.5">{idx + 1}</span>
+        <div className="shrink-0 flex items-start gap-1.5 px-2 py-2 border-r border-slate-800" style={{ width: LABEL_W, minWidth: LABEL_W }}>
+          <span className="text-xs font-mono text-slate-600 w-5 shrink-0 pt-0.5 text-right">{idx + 1}</span>
           <div className="min-w-0 flex-1">
             <p className="text-xs text-white font-medium truncate leading-tight">{fw.name}</p>
             <p className="text-[10px] text-slate-500 font-mono mt-0.5">
               {liveStart !== null
                 ? <span className="text-blue-400">{formatTime(liveStart)}</span>
-                : formatTime(start)
+                : formatTime(item.startTime)
               } · {formatDuration(fw.duration)}
             </p>
           </div>
@@ -183,25 +154,16 @@ function SortableGanttRow({
         {/* Track */}
         <div className="relative flex-1 overflow-visible" style={{ minWidth: trackW }}>
           {ticks.map(sec => (
-            <div
-              key={sec}
-              className="absolute top-0 bottom-0 w-px bg-slate-800/60"
-              style={{ left: sec * pxPerSec }}
-            />
+            <div key={sec} className="absolute top-0 bottom-0 w-px bg-slate-800/60" style={{ left: sec * pxPerSec }} />
           ))}
 
-          {/* Primary bar — draggable horizontally to retime */}
+          {/* Primary bar */}
           <div
             className={`absolute top-2 rounded flex items-center gap-1 px-2 border ${pc.bg} ${pc.border} overflow-visible cursor-grab active:cursor-grabbing select-none ${liveStart !== null ? 'ring-2 ring-white/30 z-20' : 'hover:brightness-110'} transition-[filter]`}
-            style={{
-              left: effectiveStart * pxPerSec,
-              width: Math.max(fw.duration * pxPerSec, 6),
-              height: 32,
-            }}
+            style={{ left: effectiveStart * pxPerSec, width: Math.max(fw.duration * pxPerSec, 6), height: 32 }}
             title={`${fw.name} — drag to retime · click to edit`}
             onPointerDown={handleBarPointerDown}
           >
-            {/* Live time tooltip while dragging */}
             {liveStart !== null && (
               <span className="absolute -top-6 left-0 text-[10px] font-mono font-bold text-white bg-slate-900 border border-slate-600 px-1.5 py-0.5 rounded shadow-lg whitespace-nowrap pointer-events-none">
                 {formatTime(liveStart)}
@@ -211,13 +173,11 @@ function SortableGanttRow({
               <span className={`text-xs font-medium truncate ${pc.text}`}>{fw.name}</span>
             )}
             {fw.duration * pxPerSec > 90 && (
-              <span className="text-[10px] font-mono text-slate-400 ml-auto pl-1 shrink-0">
-                {formatDuration(fw.duration)}
-              </span>
+              <span className="text-[10px] font-mono text-slate-400 ml-auto pl-1 shrink-0">{formatDuration(fw.duration)}</span>
             )}
           </div>
 
-          {/* Simultaneous bars — draggable left/right to retime offset */}
+          {/* Simultaneous bars */}
           {sims.map((sim, si) => {
             const sfw = fireworks.find(f => f.id === sim.fireworkId);
             if (!sfw) return null;
@@ -228,12 +188,7 @@ function SortableGanttRow({
               <div
                 key={sim.id}
                 className={`absolute rounded flex items-center px-2 border border-dashed ${spc.bg} ${spc.border} overflow-visible opacity-80 cursor-ew-resize select-none ${isDraggingSim ? 'z-20 opacity-100 ring-1 ring-white/40' : 'hover:opacity-100'}`}
-                style={{
-                  top: 40 + si * 22,
-                  left: (effectiveStart + liveOffset) * pxPerSec,
-                  width: Math.max(sfw.duration * pxPerSec, 6),
-                  height: 18,
-                }}
+                style={{ top: 40 + si * 22, left: (effectiveStart + liveOffset) * pxPerSec, width: Math.max(sfw.duration * pxPerSec, 6), height: 18 }}
                 title={`${sfw.name} (${formatOffset(liveOffset)}) — drag to retime`}
                 onPointerDown={e => handleSimPointerDown(e, sim)}
               >
@@ -258,7 +213,7 @@ function SortableGanttRow({
   );
 }
 
-export default function GanttView({ fireworks, showItems, timings, totalTime, onEditItem, onUpdate, onUpdateSimultaneous, dropHint }: Props) {
+export default function GanttView({ fireworks, showItems, totalTime, onEditItem, onUpdate, onUpdateSimultaneous, dropHint }: Props) {
   const [pxPerSec, setPxPerSec] = useState(2);
 
   const zoomIn  = () => setPxPerSec(p => Math.min(12, +(p * 1.6).toFixed(2)));
@@ -280,7 +235,6 @@ export default function GanttView({ fireworks, showItems, timings, totalTime, on
 
   return (
     <div className="flex flex-col h-full">
-      {/* Toolbar */}
       <div className="flex items-center gap-2 px-4 py-2 border-b border-slate-700 bg-slate-800/30 shrink-0">
         <button onClick={zoomOut} className="p-1.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-colors" title="Zoom out">
           <ZoomOut size={14} />
@@ -290,7 +244,6 @@ export default function GanttView({ fireworks, showItems, timings, totalTime, on
         </button>
         <span className="text-xs text-slate-500 font-mono">{pxPerSec.toFixed(1)}px/s</span>
 
-        {/* Phase legend */}
         <div className="flex items-center gap-4 ml-6">
           {(['start','body','mid_finale','finale'] as const).map(phase => {
             const pc = PHASE_COLORS[phase];
@@ -305,18 +258,13 @@ export default function GanttView({ fireworks, showItems, timings, totalTime, on
           })}
         </div>
 
-        <span className="ml-auto text-xs text-slate-600">Drag bar to retime · drag ⠿ to reorder · drag linked bars to offset</span>
+        <span className="ml-auto text-xs text-slate-600">Drag bar to retime · drag linked bars to offset · click to edit</span>
       </div>
 
-      {/* Scrollable chart */}
       <div className="flex-1 overflow-auto">
         <div style={{ minWidth: LABEL_W + trackW }}>
-
           {/* Time ruler */}
-          <div
-            className="flex sticky top-0 z-10 bg-slate-950 border-b border-slate-800"
-            style={{ height: 28 }}
-          >
+          <div className="flex sticky top-0 z-10 bg-slate-950 border-b border-slate-800" style={{ height: 28 }}>
             <div style={{ width: LABEL_W, minWidth: LABEL_W }} className="shrink-0 border-r border-slate-800" />
             <div className="relative flex-1" style={{ minWidth: trackW }}>
               {ticks.map(sec => (
@@ -329,49 +277,34 @@ export default function GanttView({ fireworks, showItems, timings, totalTime, on
           </div>
 
           {/* Item rows */}
-          <SortableContext items={showItems.map(si => si.id)} strategy={verticalListSortingStrategy}>
-            {showItems.map((item, idx) => (
-              <SortableGanttRow
-                key={item.id}
-                item={item}
-                fireworks={fireworks}
-                idx={idx}
-                start={timings[idx] ?? item.startTime}
-                pxPerSec={pxPerSec}
-                trackW={trackW}
-                ticks={ticks}
-                totalItems={showItems.length}
-                totalTime={totalTime}
-                dropHint={dropHint}
-                onEditItem={onEditItem}
-                onUpdate={onUpdate}
-                onUpdateSimultaneous={onUpdateSimultaneous}
-              />
-            ))}
-          </SortableContext>
+          {showItems.map((item, idx) => (
+            <DroppableGanttRow
+              key={item.id}
+              item={item}
+              fireworks={fireworks}
+              idx={idx}
+              pxPerSec={pxPerSec}
+              trackW={trackW}
+              ticks={ticks}
+              dropHint={dropHint}
+              onEditItem={onEditItem}
+              onUpdate={onUpdate}
+              onUpdateSimultaneous={onUpdateSimultaneous}
+            />
+          ))}
 
           {/* Show-end marker */}
           <div className="flex" style={{ height: 32 }}>
-            <div
-              style={{ width: LABEL_W, minWidth: LABEL_W }}
-              className="shrink-0 border-r border-slate-800 flex items-center px-3"
-            >
+            <div style={{ width: LABEL_W, minWidth: LABEL_W }} className="shrink-0 border-r border-slate-800 flex items-center px-3">
               <span className="text-xs font-mono font-bold text-amber-400">{formatTime(totalTime)}</span>
             </div>
             <div className="relative flex-1" style={{ minWidth: trackW }}>
-              <div
-                className="absolute top-0 bottom-0 w-0.5 bg-amber-500"
-                style={{ left: totalTime * pxPerSec }}
-              />
-              <span
-                className="absolute top-1.5 text-[10px] font-bold text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded"
-                style={{ left: totalTime * pxPerSec + 6 }}
-              >
+              <div className="absolute top-0 bottom-0 w-0.5 bg-amber-500" style={{ left: totalTime * pxPerSec }} />
+              <span className="absolute top-1.5 text-[10px] font-bold text-amber-400 bg-amber-500/15 px-1.5 py-0.5 rounded" style={{ left: totalTime * pxPerSec + 6 }}>
                 SHOW END
               </span>
             </div>
           </div>
-
         </div>
       </div>
     </div>
