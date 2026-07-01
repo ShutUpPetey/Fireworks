@@ -603,10 +603,9 @@ export default function PlannerTab({
     const item = showItems.find(si => si.id === id);
     if (item) {
       const effectiveDur = effectiveDurationMap.get(id) ?? 0;
-      const deletedEnd = item.startTime + effectiveDur;
       showItems.forEach(si => {
-        if (si.id !== id && si.startTime >= deletedEnd) {
-          onUpdate({ ...si, startTime: si.startTime - effectiveDur });
+        if (si.id !== id && si.startTime > item.startTime) {
+          onUpdate({ ...si, startTime: Math.max(0, si.startTime - effectiveDur) });
         }
       });
     }
@@ -668,6 +667,12 @@ export default function PlannerTab({
               const newStartTime = prevIdx >= 0
                 ? (sortedItems[prevIdx].startTime + (effectiveDurationMap.get(sortedItems[prevIdx].id) ?? 0))
                 : 0;
+              // Push everything at or after the insert point right to make room
+              showItems.forEach(si => {
+                if (si.startTime >= newStartTime) {
+                  onUpdate({ ...si, startTime: si.startTime + fw.duration });
+                }
+              });
               onAdd(makeShowItem(fw, newStartTime));
             }
             setActiveSidebarFwId(null);
