@@ -52,7 +52,7 @@ export default function MapTab({ fireworks, showItems }: Props) {
         if (!sfw) return;
         const sloc = sim.location || loc;
         if (!map.has(sloc)) map.set(sloc, []);
-        map.get(sloc)!.push({ cue: sim.cue, name: sfw.name, time: item.startTime + (sim.offset ?? 0), isManual: false });
+        map.get(sloc)!.push({ cue: sim.cue, name: sfw.name, time: item.startTime + (sim.offset ?? 0), isManual: sim.cue === 'MANUAL' });
       });
     });
 

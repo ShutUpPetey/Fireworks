@@ -85,6 +85,72 @@ function CueInput({ item, isDuplicate, onUpdate }: CueInputProps) {
   );
 }
 
+interface SimCueInputProps {
+  sim: SimultaneousItem;
+  isDuplicate: boolean;
+  onUpdate: (sim: SimultaneousItem) => void;
+}
+
+function SimCueInput({ sim, isDuplicate, onUpdate }: SimCueInputProps) {
+  const isManual = sim.cue === 'MANUAL';
+  const [val, setVal] = useState(isManual ? '' : (sim.cue ?? ''));
+
+  useEffect(() => {
+    if (!isManual) setVal(sim.cue ?? '');
+  }, [sim.cue, isManual]);
+
+  const valid = !val || !!parseCue(val);
+
+  if (isManual) {
+    return (
+      <div className="flex items-center justify-center gap-1">
+        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded font-medium bg-purple-900/50 text-purple-300 border border-purple-700">
+          Manual
+        </span>
+        <button
+          onClick={() => onUpdate({ ...sim, cue: '' })}
+          className="text-slate-500 hover:text-slate-300 p-0.5 rounded"
+          title="Remove manual flag"
+        >
+          <X size={11} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-center gap-1.5">
+      <div className="relative">
+        <input
+          className={`w-20 bg-slate-700 border rounded px-2 py-1 text-sm font-mono text-white focus:outline-none transition-colors ${
+            !valid ? 'border-red-500' : isDuplicate ? 'border-amber-500' : 'border-slate-600 focus:border-blue-500'
+          }`}
+          placeholder="cue"
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          onBlur={() => {
+            if (valid) onUpdate({ ...sim, cue: val });
+            else setVal(sim.cue ?? '');
+          }}
+        />
+        {isDuplicate && valid && (
+          <AlertCircle size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-amber-400" />
+        )}
+        {!valid && (
+          <AlertCircle size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-red-400" />
+        )}
+      </div>
+      <button
+        onClick={() => onUpdate({ ...sim, cue: 'MANUAL' })}
+        className="text-xs font-bold text-slate-500 hover:text-purple-300 px-1.5 py-0.5 rounded hover:bg-purple-900/40 transition-colors"
+        title="Mark as manually fired"
+      >
+        M
+      </button>
+    </div>
+  );
+}
+
 export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSimultaneous }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
 
@@ -361,19 +427,11 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                               {formatDuration(sfw.duration)}
                             </td>
                             <td className="px-4 py-1.5 text-center">
-                              <div className="relative inline-block">
-                                <input
-                                  className={`w-20 bg-slate-700 border rounded px-2 py-1 text-sm font-mono text-white focus:outline-none focus:border-blue-500 ${
-                                    simDupe ? 'border-amber-500' : 'border-slate-600'
-                                  }`}
-                                  placeholder="cue"
-                                  value={sim.cue}
-                                  onChange={e => onUpdateSimultaneous(item.id, { ...sim, cue: e.target.value })}
-                                />
-                                {simDupe && (
-                                  <AlertCircle size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-amber-400" />
-                                )}
-                              </div>
+                              <SimCueInput
+                                sim={sim}
+                                isDuplicate={simDupe}
+                                onUpdate={updated => onUpdateSimultaneous(item.id, updated)}
+                              />
                             </td>
                             <td className="px-4 py-1.5 text-center">
                               <select
@@ -475,7 +533,9 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                                         {sfw.name}
                                       </div>
                                       <div className="flex items-center gap-1 mt-px">
-                                        {sim.cue ? (
+                                        {sim.cue === 'MANUAL' ? (
+                                          <span className="text-xs font-mono text-purple-400">MAN</span>
+                                        ) : sim.cue ? (
                                           <span className="text-xs font-mono text-blue-400">{sim.cue}</span>
                                         ) : (
                                           <span className="text-xs text-slate-600">no cue</span>
