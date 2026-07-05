@@ -384,44 +384,135 @@ function SimCard({
 }
 
 // ── Draggable sidebar card ─────────────────────────────────────────────
-function DraggableFireworkCard({ fw, qty, onSetQty, onClickAdd }: {
+function DraggableFireworkCard({ fw, qty, usedCount, onClickAdd, isSelected, onSelect }: {
   fw: Firework;
   qty: number;
-  onSetQty: (v: number) => void;
+  usedCount: number;
   onClickAdd: () => void;
+  isSelected: boolean;
+  onSelect: () => void;
 }) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({
     id: `sidebar-${fw.id}`,
     data: { type: 'sidebar', fireworkId: fw.id },
   });
+  const pc = PHASE_COLORS[fw.phase];
+  const remaining = fw.quantity - usedCount;
 
   return (
-    <div ref={setNodeRef} className={`rounded-lg bg-slate-800 overflow-hidden transition-opacity ${isDragging ? 'opacity-40' : ''}`}>
-      <div className="flex items-center">
-        <div {...attributes} {...listeners} className="cursor-grab active:cursor-grabbing px-2 py-3.5 text-slate-500 hover:text-slate-300 touch-none shrink-0" title="Drag to add">
+    <div
+      ref={setNodeRef}
+      className={`rounded-lg overflow-hidden border-l-2 transition-opacity ${pc.border} ${
+        isSelected ? 'bg-slate-700' : 'bg-slate-800'
+      } ${isDragging ? 'opacity-40' : ''}`}
+    >
+      <div className="flex items-center min-h-[44px]">
+        <div {...attributes} {...listeners}
+          className="cursor-grab active:cursor-grabbing px-2 py-3 text-slate-500 hover:text-slate-300 touch-none shrink-0"
+          title="Drag to add"
+        >
           <GripVertical size={15} />
         </div>
-        <button onClick={onClickAdd} className="flex-1 text-left py-2 pr-3 hover:bg-slate-700 transition-colors group">
-          <div className="flex items-center gap-2">
-            <Plus size={12} className="shrink-0 text-slate-500 group-hover:text-blue-400" />
+        <button onClick={onSelect} className="flex-1 text-left py-2.5 min-w-0 hover:bg-white/5 transition-colors rounded-sm">
+          <div className="flex items-center gap-2 pr-2">
             <span className="text-xs text-white font-medium truncate flex-1">{fw.name}</span>
+            {usedCount > 0 && remaining > 0 && (
+              <span className="text-[10px] text-amber-400 font-semibold shrink-0">{remaining} left</span>
+            )}
+            {usedCount > 0 && remaining <= 0 && fw.quantity > 0 && (
+              <span className="text-[10px] text-emerald-400 font-semibold shrink-0">✓ all</span>
+            )}
           </div>
-          <div className="flex items-center gap-2 mt-0.5 pl-4">
-            <span className="text-xs text-slate-500 font-mono">{formatDuration(fw.duration)}</span>
-            {fw.cost > 0 && <span className="text-xs text-slate-500">${fw.cost}</span>}
+          <div className="flex items-center gap-2 mt-0.5 pr-2">
+            <span className="text-[10px] text-slate-500 font-mono">{formatDuration(fw.duration)}</span>
+            {fw.cost > 0 && <span className="text-[10px] text-slate-500">${fw.cost}</span>}
+            {usedCount > 0 && <span className="text-[10px] text-blue-400">{usedCount}× in show</span>}
           </div>
         </button>
+        <button
+          onClick={e => { e.stopPropagation(); onClickAdd(); }}
+          className="px-3 py-2 text-slate-500 hover:text-blue-400 hover:bg-blue-900/20 transition-colors shrink-0"
+          title={qty > 1 ? `Add ×${qty}` : 'Add to show'}
+        >
+          <Plus size={15} />
+        </button>
       </div>
-      <div className="flex items-center gap-1 px-3 pb-2.5">
-        <span className="text-xs text-slate-500 mr-1">Qty:</span>
-        <button onClick={() => onSetQty(qty - 1)} className="w-6 h-6 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs flex items-center justify-center">−</button>
-        <input
-          type="number" min="1" max="20"
-          className="w-10 bg-slate-700 border border-slate-600 rounded px-1 py-0.5 text-xs text-white text-center focus:outline-none focus:border-blue-500"
-          value={qty} onChange={e => onSetQty(parseInt(e.target.value) || 1)} onClick={e => e.stopPropagation()}
-        />
-        <button onClick={() => onSetQty(qty + 1)} className="w-6 h-6 rounded bg-slate-700 hover:bg-slate-600 text-white text-xs flex items-center justify-center">+</button>
-        {qty > 1 && <span className="text-xs text-blue-400 ml-1">×{qty}</span>}
+    </div>
+  );
+}
+
+// ── Firework detail panel ──────────────────────────────────────────────
+function FireworkDetailPanel({ fw, usedCount, qty, onSetQty, onAdd, onClose }: {
+  fw: Firework;
+  usedCount: number;
+  qty: number;
+  onSetQty: (v: number) => void;
+  onAdd: () => void;
+  onClose: () => void;
+}) {
+  const pc = PHASE_COLORS[fw.phase];
+  const remaining = fw.quantity - usedCount;
+
+  return (
+    <div className="border-t-2 border-slate-600 bg-slate-900/80 shrink-0">
+      <div className="flex items-start gap-2 px-3 pt-3 pb-2">
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-semibold text-white truncate">{fw.name}</p>
+          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${TYPE_COLORS[fw.type]}`}>{FIREWORK_TYPE_LABELS[fw.type]}</span>
+            <span className={`text-[10px] px-1.5 py-0.5 rounded ${pc.badge}`}>{PHASE_LABELS[fw.phase]}</span>
+          </div>
+        </div>
+        <button onClick={onClose} className="text-slate-500 hover:text-white p-1 -mt-0.5 shrink-0 transition-colors">
+          <X size={14} />
+        </button>
+      </div>
+
+      <div className="grid grid-cols-3 gap-1.5 px-3 pb-2">
+        {([
+          ['Duration', formatDuration(fw.duration)],
+          ['Cost', fw.cost > 0 ? `$${fw.cost}` : '—'],
+          ['Rating', fw.rating > 0 ? `${fw.rating}/10` : '—'],
+        ] as [string, string][]).map(([label, value]) => (
+          <div key={label} className="bg-slate-800 rounded px-2 py-1.5 text-center">
+            <p className="text-[10px] text-slate-500">{label}</p>
+            <p className="text-xs font-mono text-white font-medium">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex items-center gap-3 px-3 pb-2 text-xs">
+        <span className="text-slate-500">Own: <span className="text-slate-200 font-medium">{fw.quantity}</span></span>
+        <span className="text-slate-500">In show: <span className="text-blue-400 font-medium">{usedCount}</span></span>
+        {remaining > 0 ? (
+          <span className="text-amber-400 font-semibold">{remaining} remaining</span>
+        ) : usedCount > 0 ? (
+          <span className="text-emerald-400 font-semibold">All placed ✓</span>
+        ) : null}
+      </div>
+
+      {fw.notes && (
+        <p className="text-[10px] text-slate-400 italic px-3 pb-2 leading-relaxed">{fw.notes}</p>
+      )}
+
+      <div className="flex items-center gap-2 px-3 pb-3">
+        <div className="flex items-center gap-1 shrink-0">
+          <button onClick={() => onSetQty(qty - 1)} className="w-7 h-7 rounded bg-slate-700 hover:bg-slate-600 text-white text-sm font-bold flex items-center justify-center transition-colors">−</button>
+          <input
+            type="number" min="1" max="20"
+            className="w-10 bg-slate-700 border border-slate-600 rounded px-1 py-1 text-xs text-white text-center focus:outline-none focus:border-blue-500"
+            value={qty}
+            onChange={e => onSetQty(parseInt(e.target.value) || 1)}
+            onClick={e => e.stopPropagation()}
+          />
+          <button onClick={() => onSetQty(qty + 1)} className="w-7 h-7 rounded bg-slate-700 hover:bg-slate-600 text-white text-sm font-bold flex items-center justify-center transition-colors">+</button>
+        </div>
+        <button
+          onClick={onAdd}
+          className="flex-1 flex items-center justify-center gap-1.5 bg-blue-600 hover:bg-blue-500 text-white rounded-lg py-2 text-xs font-semibold transition-colors"
+        >
+          <Plus size={12} /> Add{qty > 1 ? ` ×${qty}` : ''} to Show
+        </button>
       </div>
     </div>
   );
@@ -543,6 +634,7 @@ export default function PlannerTab({
   const [qtys, setQtys] = useState<Record<string, number>>({});
   const [viewMode, setViewMode] = useState<'list' | 'gantt'>('list');
   const [activeSidebarFwId, setActiveSidebarFwId] = useState<string | null>(null);
+  const [selectedSidebarFwId, setSelectedSidebarFwId] = useState<string | null>(null);
   const [dropHint, setDropHint] = useState<DropHint>(null);
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
   const [editingSim, setEditingSim] = useState<{ showItemId: string; simId: string } | null>(null);
@@ -594,6 +686,17 @@ export default function PlannerTab({
     return vals.length > 0 ? Math.max(...vals, 1) : 1;
   }, [effectiveDurationMap]);
 
+  const usageCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    showItems.forEach(si => {
+      counts.set(si.fireworkId, (counts.get(si.fireworkId) ?? 0) + 1);
+      (si.simultaneous ?? []).forEach(sim => {
+        counts.set(sim.fireworkId, (counts.get(sim.fireworkId) ?? 0) + 1);
+      });
+    });
+    return counts;
+  }, [showItems]);
+
   const getNextStartTime = () => {
     if (showItems.length === 0) return 0;
     return Math.max(0, ...showItems.map(si => si.startTime + (effectiveDurationMap.get(si.id) ?? 0)));
@@ -616,6 +719,18 @@ export default function PlannerTab({
     id: uuid(), fireworkId: fw.id, cue: '', location: 'FC',
     showNotes: '', startTime, simultaneous: [],
   });
+
+  const addToShow = (fw: Firework) => {
+    const qty = getQty(fw.id);
+    const t = getNextStartTime();
+    if (qty === 1) {
+      onAdd(makeShowItem(fw, t));
+    } else {
+      let cursor = t;
+      const items = Array.from({ length: qty }, () => { const it = makeShowItem(fw, cursor); cursor += fw.duration; return it; });
+      onAddMany(items);
+    }
+  };
 
   const computePosition = (overRect: { top: number; height: number }): 'before' | 'on' | 'after' => {
     const relY = pointerYRef.current - overRect.top;
@@ -680,15 +795,7 @@ export default function PlannerTab({
             return;
           }
         }
-        const t = getNextStartTime();
-        const qty = getQty(fwId);
-        if (qty === 1) {
-          onAdd(makeShowItem(fw, t));
-        } else {
-          let cursor = t;
-          const items = Array.from({ length: qty }, () => { const item = makeShowItem(fw, cursor); cursor += fw.duration; return item; });
-          onAddMany(items);
-        }
+        addToShow(fw);
       }
     }
     setActiveSidebarFwId(null);
@@ -720,10 +827,10 @@ export default function PlannerTab({
     >
       <div className="flex flex-col md:flex-row h-full">
         {/* Inventory Sidebar */}
-        <div className={`shrink-0 border-b md:border-b-0 md:border-r border-slate-700 flex flex-col overflow-hidden transition-all duration-200 ${sidebarOpen ? 'h-72 md:h-auto md:w-72' : 'h-12 md:h-auto md:w-10'}`}>
+        <div className={`shrink-0 border-b md:border-b-0 md:border-r border-slate-700 flex flex-col overflow-hidden transition-all duration-200 ${sidebarOpen ? 'h-96 md:h-auto md:w-80' : 'h-12 md:h-auto md:w-10'}`}>
           <button
             onClick={() => setSidebarOpen(o => !o)}
-            className="flex items-center justify-between px-3 py-3 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors border-b border-slate-700"
+            className="flex items-center justify-between px-3 py-3 hover:bg-slate-800 text-slate-400 hover:text-white transition-colors border-b border-slate-700 shrink-0"
           >
             {sidebarOpen && <span className="text-xs font-semibold uppercase tracking-wider">Inventory</span>}
             <ChevronDown size={14} className={`transition-transform ${sidebarOpen ? '' : '-rotate-90'}`} />
@@ -731,44 +838,57 @@ export default function PlannerTab({
 
           {sidebarOpen && (
             <>
-              <div className="flex flex-col border-b border-slate-700">
+              <div className="flex flex-col border-b border-slate-700 shrink-0">
                 {PHASE_ORDER.map(phase => {
                   const pc = PHASE_COLORS[phase];
-                  const count = fireworks.filter(fw => fw.phase === phase).length;
+                  const phaseFws = fireworks.filter(fw => fw.phase === phase);
+                  const count = phaseFws.length;
+                  const inShow = phaseFws.reduce((sum, fw) => sum + (usageCounts.get(fw.id) ?? 0), 0);
                   return (
                     <button key={phase} onClick={() => setSidebarPhase(phase)}
-                      className={`flex items-center justify-between px-3 py-2.5 text-xs font-medium transition-colors border-l-2 ${sidebarPhase === phase ? `${pc.text} border-current bg-slate-800` : 'text-slate-400 border-transparent hover:bg-slate-800/50'}`}>
+                      className={`flex items-center justify-between px-3 py-2 text-xs font-medium transition-colors border-l-2 ${sidebarPhase === phase ? `${pc.text} border-current bg-slate-800` : 'text-slate-400 border-transparent hover:bg-slate-800/50'}`}>
                       <span>{PHASE_LABELS[phase]}</span>
-                      <span className="text-slate-500">{count}</span>
+                      <span className={inShow > 0 ? 'text-blue-400' : 'text-slate-500'}>
+                        {inShow > 0 ? `${inShow}/${count}` : count}
+                      </span>
                     </button>
                   );
                 })}
               </div>
-              <div className="px-3 py-1.5 bg-slate-900/40 border-b border-slate-700/50">
-                <p className="text-[10px] text-slate-500 leading-snug">Click to add · Drag onto item → fire together · Drag between items → insert there</p>
+              <div className="px-3 py-1.5 bg-slate-900/40 border-b border-slate-700/50 shrink-0">
+                <p className="text-[10px] text-slate-500 leading-snug">Tap to select · [+] to add · Drag onto item → fire together · Drag between → insert</p>
               </div>
-              <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              <div className="flex-1 overflow-y-auto p-2 space-y-0.5 min-h-0">
                 {sidebarFws.length === 0 ? (
                   <p className="text-xs text-slate-500 text-center py-6 px-2">No fireworks in this phase. Add them in Inventory.</p>
                 ) : (
                   sidebarFws.map(fw => (
                     <DraggableFireworkCard
-                      key={fw.id} fw={fw} qty={getQty(fw.id)} onSetQty={v => setQty(fw.id, v)}
-                      onClickAdd={() => {
-                        const qty = getQty(fw.id);
-                        const t = getNextStartTime();
-                        if (qty === 1) {
-                          onAdd(makeShowItem(fw, t));
-                        } else {
-                          let cursor = t;
-                          const items = Array.from({ length: qty }, () => { const item = makeShowItem(fw, cursor); cursor += fw.duration; return item; });
-                          onAddMany(items);
-                        }
-                      }}
+                      key={fw.id}
+                      fw={fw}
+                      qty={getQty(fw.id)}
+                      usedCount={usageCounts.get(fw.id) ?? 0}
+                      onClickAdd={() => addToShow(fw)}
+                      isSelected={selectedSidebarFwId === fw.id}
+                      onSelect={() => setSelectedSidebarFwId(prev => prev === fw.id ? null : fw.id)}
                     />
                   ))
                 )}
               </div>
+              {(() => {
+                const selFw = selectedSidebarFwId ? fireworks.find(f => f.id === selectedSidebarFwId) : null;
+                if (!selFw) return null;
+                return (
+                  <FireworkDetailPanel
+                    fw={selFw}
+                    usedCount={usageCounts.get(selFw.id) ?? 0}
+                    qty={getQty(selFw.id)}
+                    onSetQty={v => setQty(selFw.id, v)}
+                    onAdd={() => addToShow(selFw)}
+                    onClose={() => setSelectedSidebarFwId(null)}
+                  />
+                );
+              })()}
             </>
           )}
         </div>
