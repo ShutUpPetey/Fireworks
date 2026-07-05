@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { Plus, Upload, Pencil, Trash2, Star, Search, SlidersHorizontal } from 'lucide-react';
-import type { Firework, FireworkType, ShowPhase } from '../types';
+import type { Firework, FireworkType, ShowPhase, ShowItem } from '../types';
 import {
   FIREWORK_TYPE_LABELS, PHASE_LABELS, PHASE_COLORS, TYPE_COLORS, formatDuration
 } from '../types';
@@ -9,19 +9,31 @@ import ImportModal from './ImportModal';
 
 interface Props {
   fireworks: Firework[];
+  showItems: ShowItem[];
   onAdd: (fw: Firework) => void;
   onUpdate: (fw: Firework) => void;
   onDelete: (id: string) => void;
   onImport: (fws: Firework[]) => void;
 }
 
-export default function InventoryTab({ fireworks, onAdd, onUpdate, onDelete, onImport }: Props) {
+export default function InventoryTab({ fireworks, showItems, onAdd, onUpdate, onDelete, onImport }: Props) {
   const [modalFw, setModalFw] = useState<Firework | null | undefined>(undefined);
   const [showImport, setShowImport] = useState(false);
   const [search, setSearch] = useState('');
   const [filterPhase, setFilterPhase] = useState<ShowPhase | ''>('');
   const [filterType, setFilterType] = useState<FireworkType | ''>('');
   const [sortBy, setSortBy] = useState<'name' | 'phase' | 'cost' | 'duration' | 'rating'>('phase');
+
+  const usageCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    showItems.forEach(si => {
+      counts.set(si.fireworkId, (counts.get(si.fireworkId) ?? 0) + 1);
+      (si.simultaneous ?? []).forEach(sim => {
+        counts.set(sim.fireworkId, (counts.get(sim.fireworkId) ?? 0) + 1);
+      });
+    });
+    return counts;
+  }, [showItems]);
 
   const filtered = fireworks
     .filter(fw => {
@@ -44,6 +56,8 @@ export default function InventoryTab({ fireworks, onAdd, onUpdate, onDelete, onI
 
   const totalCost = fireworks.reduce((s, fw) => s + fw.cost * fw.quantity, 0);
   const totalItems = fireworks.reduce((s, fw) => s + fw.quantity, 0);
+  const totalInShow = showItems.length + showItems.reduce((s, si) => s + (si.simultaneous?.length ?? 0), 0);
+  const uniqueInShow = usageCounts.size;
 
   return (
     <div className="flex flex-col h-full">
@@ -58,6 +72,17 @@ export default function InventoryTab({ fireworks, onAdd, onUpdate, onDelete, onI
         <span className="text-slate-400">
           Total cost: <span className="text-emerald-400 font-semibold">${totalCost.toFixed(2)}</span>
         </span>
+        {totalInShow > 0 && (
+          <>
+            <span className="w-px bg-slate-700" />
+            <span className="text-slate-400">
+              In show: <span className="text-blue-400 font-semibold">{totalInShow} cues</span>
+            </span>
+            <span className="text-slate-400">
+              Types used: <span className="text-blue-400 font-semibold">{uniqueInShow} / {fireworks.length}</span>
+            </span>
+          </>
+        )}
       </div>
 
       {/* Toolbar */}
@@ -141,6 +166,7 @@ export default function InventoryTab({ fireworks, onAdd, onUpdate, onDelete, onI
                 <th className="text-left px-4 py-3 text-slate-400 font-medium">Phase</th>
                 <th className="text-right px-4 py-3 text-slate-400 font-medium">Cost</th>
                 <th className="text-right px-4 py-3 text-slate-400 font-medium">Qty</th>
+                <th className="text-center px-4 py-3 text-slate-400 font-medium">In Show</th>
                 <th className="text-right px-4 py-3 text-slate-400 font-medium">Duration</th>
                 <th className="text-right px-4 py-3 text-slate-400 font-medium">Rating</th>
                 <th className="text-left px-4 py-3 text-slate-400 font-medium">Notes</th>
@@ -150,6 +176,8 @@ export default function InventoryTab({ fireworks, onAdd, onUpdate, onDelete, onI
             <tbody className="divide-y divide-slate-800">
               {filtered.map((fw, i) => {
                 const pc = PHASE_COLORS[fw.phase];
+                const inShow = usageCounts.get(fw.id) ?? 0;
+                const remaining = fw.quantity - inShow;
                 return (
                   <tr key={fw.id} className="hover:bg-slate-800/50 group">
                     <td className="px-4 py-2.5 text-slate-500">{i + 1}</td>
@@ -170,6 +198,23 @@ export default function InventoryTab({ fireworks, onAdd, onUpdate, onDelete, onI
                       {fw.cost > 0 ? `$${fw.cost.toFixed(2)}` : '—'}
                     </td>
                     <td className="px-4 py-2.5 text-right text-slate-300">{fw.quantity}</td>
+                    <td className="px-4 py-2.5 text-center">
+                      {inShow === 0 ? (
+                        <span className="text-slate-600 text-xs">—</span>
+                      ) : remaining <= 0 ? (
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-emerald-900/50 text-emerald-400 border border-emerald-800">
+                          ✓ all {inShow}
+                        </span>
+                      ) : remaining < 0 ? (
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-blue-900/50 text-blue-400 border border-blue-800">
+                          {inShow}× used
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium bg-amber-900/50 text-amber-400 border border-amber-800">
+                          {inShow}× · {remaining} left
+                        </span>
+                      )}
+                    </td>
                     <td className="px-4 py-2.5 text-right text-slate-300 font-mono">
                       {formatDuration(fw.duration)}
                     </td>

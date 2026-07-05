@@ -148,6 +148,7 @@ export default function App() {
         {tab === 'inventory' && (
           <InventoryTab
             fireworks={store.fireworks}
+            showItems={store.showItems}
             onAdd={store.addFirework}
             onUpdate={store.updateFirework}
             onDelete={store.deleteFirework}
