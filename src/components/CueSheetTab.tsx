@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Printer, Wand2, AlertCircle, Grid3X3, List, Link2 } from 'lucide-react';
+import React, { useState, useMemo, useEffect } from 'react';
+import { Printer, Wand2, AlertCircle, Grid3X3, List, Link2, X } from 'lucide-react';
 import type { Firework, ShowItem, SimultaneousItem } from '../types';
 import {
   LOCATIONS, PHASE_LABELS, PHASE_COLORS,
@@ -15,6 +15,76 @@ interface Props {
 
 type ViewMode = 'list' | 'grid';
 
+interface CueInputProps {
+  item: ShowItem;
+  isDuplicate: boolean;
+  onUpdate: (item: ShowItem) => void;
+}
+
+function CueInput({ item, isDuplicate, onUpdate }: CueInputProps) {
+  const isManual = item.cue === 'MANUAL';
+  const [val, setVal] = useState(isManual ? '' : (item.cue ?? ''));
+
+  useEffect(() => {
+    if (!isManual) setVal(item.cue ?? '');
+  }, [item.cue, isManual]);
+
+  const valid = !val || !!parseCue(val);
+
+  if (isManual) {
+    return (
+      <div className="flex items-center justify-center gap-1">
+        <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded font-medium bg-purple-900/50 text-purple-300 border border-purple-700">
+          Manual
+        </span>
+        <button
+          onClick={() => onUpdate({ ...item, cue: '' })}
+          className="text-slate-500 hover:text-slate-300 p-0.5 rounded"
+          title="Remove manual flag, assign a cue number"
+        >
+          <X size={11} />
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center justify-center gap-1.5">
+      <div className="relative">
+        <input
+          className={`w-20 bg-slate-700 border rounded px-2 py-1 text-sm font-mono text-white focus:outline-none transition-colors ${
+            !valid
+              ? 'border-red-500'
+              : isDuplicate
+              ? 'border-amber-500'
+              : 'border-slate-600 focus:border-blue-500'
+          }`}
+          placeholder="1.1"
+          value={val}
+          onChange={e => setVal(e.target.value)}
+          onBlur={() => {
+            if (valid) onUpdate({ ...item, cue: val });
+            else setVal(item.cue ?? '');
+          }}
+        />
+        {isDuplicate && valid && (
+          <AlertCircle size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-amber-400" />
+        )}
+        {!valid && (
+          <AlertCircle size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-red-400" />
+        )}
+      </div>
+      <button
+        onClick={() => onUpdate({ ...item, cue: 'MANUAL' })}
+        className="text-xs font-bold text-slate-500 hover:text-purple-300 px-1.5 py-0.5 rounded hover:bg-purple-900/40 transition-colors"
+        title="Mark as manually fired — no electric cue"
+      >
+        M
+      </button>
+    </div>
+  );
+}
+
 export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSimultaneous }: Props) {
   const [viewMode, setViewMode] = useState<ViewMode>('list');
 
@@ -23,6 +93,26 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
     [showItems],
   );
 
+  // Detect duplicate cue numbers across all items and simultaneous
+  const duplicateCues = useMemo(() => {
+    const seen = new Map<string, number>();
+    const tally = (cue: string) => {
+      const c = cue?.trim();
+      if (!c || c === 'MANUAL') return;
+      seen.set(c, (seen.get(c) ?? 0) + 1);
+    };
+    sortedItems.forEach(si => {
+      tally(si.cue);
+      (si.simultaneous ?? []).forEach(sim => tally(sim.cue));
+    });
+    const dupes = new Set<string>();
+    seen.forEach((count, cue) => { if (count > 1) dupes.add(cue); });
+    return dupes;
+  }, [sortedItems]);
+
+  const missingCueCount = sortedItems.filter(si => !si.cue).length;
+  const manualCount = sortedItems.filter(si => si.cue === 'MANUAL').length;
+  const cuedCount = sortedItems.filter(si => si.cue && si.cue !== 'MANUAL').length;
 
   const autoAssignCues = () => {
     if (!confirm('Auto-assign cue numbers? This will overwrite existing cues.')) return;
@@ -50,41 +140,34 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
     return grid;
   }, [showItems, fireworks]);
 
-  const hasCues = sortedItems.some(si => si.cue);
-
-  const CueInput = ({ item }: { item: ShowItem }) => {
-    const [val, setVal] = useState(item.cue);
-    const valid = !val || !!parseCue(val);
-    return (
-      <div className="relative">
-        <input
-          className={`w-20 bg-slate-700 border rounded px-2 py-1 text-sm font-mono text-white focus:outline-none transition-colors ${
-            valid ? 'border-slate-600 focus:border-blue-500' : 'border-red-500'
-          }`}
-          placeholder="1.1"
-          value={val}
-          onChange={e => setVal(e.target.value)}
-          onBlur={() => {
-            if (valid) onUpdate({ ...item, cue: val });
-            else setVal(item.cue);
-          }}
-        />
-        {!valid && (
-          <AlertCircle size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-red-400" />
-        )}
-      </div>
-    );
-  };
-
   return (
     <div className="flex flex-col h-full">
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-2 md:gap-3 px-4 md:px-6 py-3 border-b border-slate-700">
-        <div className="text-sm text-slate-400">
-          <span className="text-white font-semibold">{sortedItems.length}</span> items in show
-          {hasCues && (
-            <span className="ml-3">
-              · <span className="text-white font-semibold">{sortedItems.filter(si => si.cue).length}</span> cued
+        <div className="flex items-center gap-3 text-sm flex-wrap">
+          <span className="text-slate-400">
+            <span className="text-white font-semibold">{sortedItems.length}</span> items
+          </span>
+          {cuedCount > 0 && (
+            <span className="text-slate-500">
+              · <span className="text-white font-semibold">{cuedCount}</span> cued
+            </span>
+          )}
+          {manualCount > 0 && (
+            <span className="flex items-center gap-1 text-purple-400 font-medium">
+              · {manualCount} manual
+            </span>
+          )}
+          {missingCueCount > 0 && (
+            <span className="flex items-center gap-1 text-amber-400 font-medium">
+              <AlertCircle size={12} />
+              {missingCueCount} missing {missingCueCount === 1 ? 'cue' : 'cues'}
+            </span>
+          )}
+          {duplicateCues.size > 0 && (
+            <span className="flex items-center gap-1 text-red-400 font-medium">
+              <AlertCircle size={12} />
+              {duplicateCues.size} duplicate {duplicateCues.size === 1 ? 'cue' : 'cues'}
             </span>
           )}
         </div>
@@ -134,7 +217,7 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
             {/* Cue format hint */}
             <div className="flex items-center gap-2 px-6 py-2 bg-blue-950/30 border-b border-blue-900/30 text-xs text-blue-400">
               <AlertCircle size={12} />
-              Cue format: <strong>rack.position</strong> — rack 1–10, position 1–12 (e.g. 1.1, 3.7, 10.12)
+              Cue format: <strong>rack.position</strong> — rack 1–10, position 1–12 (e.g. 1.1, 3.7, 10.12) · Press <strong>M</strong> to mark a cue as manually fired
             </div>
             <table className="w-full text-sm">
               <thead className="bg-slate-900 sticky top-0 z-10">
@@ -156,112 +239,134 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                   if (!fw) return null;
                   const pc = PHASE_COLORS[fw.phase];
                   const sims = item.simultaneous ?? [];
+                  const isMissing = !item.cue;
+                  const isDupe = !!(item.cue && item.cue !== 'MANUAL' && duplicateCues.has(item.cue.trim()));
+                  const rowBg = isMissing
+                    ? 'bg-amber-950/20 hover:bg-amber-900/25'
+                    : isDupe
+                    ? 'bg-red-950/20 hover:bg-red-900/25'
+                    : 'hover:bg-slate-800/30';
+                  const borderColor = isMissing
+                    ? 'border-l-2 border-l-amber-600'
+                    : isDupe
+                    ? 'border-l-2 border-l-red-500'
+                    : 'border-l-2 border-l-transparent';
                   return (
                     <React.Fragment key={item.id}>
-                    <tr className="hover:bg-slate-800/30 group">
-                      <td className="px-4 py-2.5 text-slate-500 font-mono" rowSpan={sims.length + 1}>{idx + 1}</td>
-                      <td className="px-4 py-2.5 text-slate-400 font-mono text-xs" rowSpan={sims.length + 1}>
-                        {formatTime(item.startTime)}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className="text-white font-medium">{fw.name}</span>
-                        {fw.notes && (
-                          <p className="text-xs text-slate-500 truncate max-w-48 mt-0.5">{fw.notes}</p>
-                        )}
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[fw.type]}`}>
-                          {FIREWORK_TYPE_LABELS[fw.type]}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${pc.badge}`}>
-                          {PHASE_LABELS[fw.phase]}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5 text-right text-slate-400 font-mono text-xs">
-                        {formatDuration(fw.duration)}
-                      </td>
-                      <td className="px-4 py-2.5 text-center">
-                        <CueInput item={item} />
-                      </td>
-                      <td className="px-4 py-2.5 text-center">
-                        <select
-                          className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500"
-                          value={item.location}
-                          onChange={e => onUpdate({ ...item, location: e.target.value })}
-                        >
-                          {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
-                        </select>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <input
-                          className="w-full bg-transparent border-b border-transparent hover:border-slate-600 focus:border-blue-500 focus:outline-none text-xs text-slate-400 placeholder-slate-600 py-0.5"
-                          placeholder="show notes…"
-                          value={item.showNotes}
-                          onChange={e => onUpdate({ ...item, showNotes: e.target.value })}
-                        />
-                      </td>
-                    </tr>
-                    {/* Simultaneous sub-rows */}
-                    {sims.map(sim => {
-                      const sfw = fireworks.find(f => f.id === sim.fireworkId);
-                      if (!sfw) return null;
-                      const spc = PHASE_COLORS[sfw.phase];
-                      return (
-                        <tr key={sim.id} className="bg-slate-900/40 border-t border-slate-800/50">
-                          <td className="px-4 py-1.5">
-                            <div className="flex items-center gap-1.5">
-                              <Link2 size={11} className="text-slate-500 shrink-0" />
-                              <span className="text-slate-300 text-xs">{sfw.name}</span>
-                            </div>
-                          </td>
-                          <td className="px-4 py-1.5">
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[sfw.type]}`}>
-                              {FIREWORK_TYPE_LABELS[sfw.type]}
-                            </span>
-                          </td>
-                          <td className="px-4 py-1.5">
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${spc.badge}`}>
-                              {PHASE_LABELS[sfw.phase]}
-                            </span>
-                          </td>
-                          <td className="px-4 py-1.5 text-right text-slate-500 font-mono text-xs">
-                            {formatDuration(sfw.duration)}
-                          </td>
-                          <td className="px-4 py-1.5 text-center">
-                            <input
-                              className="w-20 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm font-mono text-white focus:outline-none focus:border-blue-500"
-                              placeholder="cue"
-                              value={sim.cue}
-                              onChange={e => onUpdateSimultaneous(item.id, { ...sim, cue: e.target.value })}
-                            />
-                          </td>
-                          <td className="px-4 py-1.5 text-center">
-                            <select
-                              className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500"
-                              value={sim.location}
-                              onChange={e => onUpdateSimultaneous(item.id, { ...sim, location: e.target.value })}
-                            >
-                              {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
-                            </select>
-                          </td>
-                          <td className="px-4 py-1.5">
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                type="number"
-                                className="w-14 bg-slate-700 border border-slate-600 rounded px-1.5 py-1 text-xs font-mono text-white text-center focus:outline-none focus:border-blue-500"
-                                value={sim.offset}
-                                onChange={e => onUpdateSimultaneous(item.id, { ...sim, offset: parseInt(e.target.value) || 0 })}
-                              />
-                              <span className="text-xs text-slate-500 italic">
-                                {sim.offset === 0 ? 'same time' : sim.offset > 0 ? `${sim.offset}s after` : `${Math.abs(sim.offset)}s before`}
+                      <tr className={`group ${rowBg}`}>
+                        <td className={`px-4 py-2.5 text-slate-500 font-mono ${borderColor}`} rowSpan={sims.length + 1}>
+                          {idx + 1}
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-400 font-mono text-xs" rowSpan={sims.length + 1}>
+                          {formatTime(item.startTime)}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <span className="text-white font-medium">{fw.name}</span>
+                          {fw.notes && (
+                            <p className="text-xs text-slate-500 truncate max-w-48 mt-0.5">{fw.notes}</p>
+                          )}
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[fw.type]}`}>
+                            {FIREWORK_TYPE_LABELS[fw.type]}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${pc.badge}`}>
+                            {PHASE_LABELS[fw.phase]}
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-right text-slate-400 font-mono text-xs">
+                          {formatDuration(fw.duration)}
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          <CueInput item={item} isDuplicate={isDupe} onUpdate={onUpdate} />
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          <select
+                            className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500"
+                            value={item.location}
+                            onChange={e => onUpdate({ ...item, location: e.target.value })}
+                          >
+                            {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+                          </select>
+                        </td>
+                        <td className="px-4 py-2.5">
+                          <input
+                            className="w-full bg-transparent border-b border-transparent hover:border-slate-600 focus:border-blue-500 focus:outline-none text-xs text-slate-400 placeholder-slate-600 py-0.5"
+                            placeholder="show notes…"
+                            value={item.showNotes}
+                            onChange={e => onUpdate({ ...item, showNotes: e.target.value })}
+                          />
+                        </td>
+                      </tr>
+                      {/* Simultaneous sub-rows */}
+                      {sims.map(sim => {
+                        const sfw = fireworks.find(f => f.id === sim.fireworkId);
+                        if (!sfw) return null;
+                        const spc = PHASE_COLORS[sfw.phase];
+                        const simDupe = !!(sim.cue && duplicateCues.has(sim.cue.trim()));
+                        return (
+                          <tr key={sim.id} className="bg-slate-900/40 border-t border-slate-800/50">
+                            <td className="px-4 py-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <Link2 size={11} className="text-slate-500 shrink-0" />
+                                <span className="text-slate-300 text-xs">{sfw.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-4 py-1.5">
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[sfw.type]}`}>
+                                {FIREWORK_TYPE_LABELS[sfw.type]}
                               </span>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                            </td>
+                            <td className="px-4 py-1.5">
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${spc.badge}`}>
+                                {PHASE_LABELS[sfw.phase]}
+                              </span>
+                            </td>
+                            <td className="px-4 py-1.5 text-right text-slate-500 font-mono text-xs">
+                              {formatDuration(sfw.duration)}
+                            </td>
+                            <td className="px-4 py-1.5 text-center">
+                              <div className="relative inline-block">
+                                <input
+                                  className={`w-20 bg-slate-700 border rounded px-2 py-1 text-sm font-mono text-white focus:outline-none focus:border-blue-500 ${
+                                    simDupe ? 'border-amber-500' : 'border-slate-600'
+                                  }`}
+                                  placeholder="cue"
+                                  value={sim.cue}
+                                  onChange={e => onUpdateSimultaneous(item.id, { ...sim, cue: e.target.value })}
+                                />
+                                {simDupe && (
+                                  <AlertCircle size={12} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-amber-400" />
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-4 py-1.5 text-center">
+                              <select
+                                className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500"
+                                value={sim.location}
+                                onChange={e => onUpdateSimultaneous(item.id, { ...sim, location: e.target.value })}
+                              >
+                                {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
+                              </select>
+                            </td>
+                            <td className="px-4 py-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  type="number"
+                                  className="w-14 bg-slate-700 border border-slate-600 rounded px-1.5 py-1 text-xs font-mono text-white text-center focus:outline-none focus:border-blue-500"
+                                  value={sim.offset}
+                                  onChange={e => onUpdateSimultaneous(item.id, { ...sim, offset: parseInt(e.target.value) || 0 })}
+                                />
+                                <span className="text-xs text-slate-500 italic">
+                                  {sim.offset === 0 ? 'same time' : sim.offset > 0 ? `${sim.offset}s after` : `${Math.abs(sim.offset)}s before`}
+                                </span>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </React.Fragment>
                   );
                 })}
@@ -291,32 +396,39 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                   <div className="w-16 shrink-0 flex items-center justify-end pr-2">
                     <span className="text-sm font-mono font-bold text-slate-400">{rackIdx + 1}</span>
                   </div>
-                  {row.map((cell, posIdx) => (
-                    <div
-                      key={posIdx}
-                      className={`w-32 h-16 rounded border flex flex-col items-center justify-center text-center p-1 transition-colors ${
-                        cell
-                          ? `${PHASE_COLORS[cell.fw.phase].bg} ${PHASE_COLORS[cell.fw.phase].border} cursor-default`
-                          : 'bg-slate-900 border-slate-800'
-                      }`}
-                    >
-                      {cell ? (
-                        <>
-                          <span className="text-xs font-mono font-bold text-slate-200">
-                            {rackIdx + 1}.{posIdx + 1}
-                          </span>
-                          <span className="text-xs text-white font-medium leading-tight mt-0.5 line-clamp-2">
-                            {cell.fw.name}
-                          </span>
-                          <span className="text-xs text-slate-400 font-mono mt-0.5">
-                            {cell.item.location}
-                          </span>
-                        </>
-                      ) : (
-                        <span className="text-slate-700 text-xs font-mono">{rackIdx + 1}.{posIdx + 1}</span>
-                      )}
-                    </div>
-                  ))}
+                  {row.map((cell, posIdx) => {
+                    const cueStr = `${rackIdx + 1}.${posIdx + 1}`;
+                    const isDupe = duplicateCues.has(cueStr);
+                    return (
+                      <div
+                        key={posIdx}
+                        className={`w-32 h-16 rounded border flex flex-col items-center justify-center text-center p-1 transition-colors ${
+                          cell
+                            ? isDupe
+                              ? 'bg-amber-900/60 border-amber-500'
+                              : `${PHASE_COLORS[cell.fw.phase].bg} ${PHASE_COLORS[cell.fw.phase].border}`
+                            : 'bg-slate-900 border-slate-800'
+                        }`}
+                      >
+                        {cell ? (
+                          <>
+                            <span className={`text-xs font-mono font-bold ${isDupe ? 'text-amber-300' : 'text-slate-200'}`}>
+                              {cueStr}
+                              {isDupe && ' ⚠'}
+                            </span>
+                            <span className="text-xs text-white font-medium leading-tight mt-0.5 line-clamp-2">
+                              {cell.fw.name}
+                            </span>
+                            <span className="text-xs text-slate-400 font-mono mt-0.5">
+                              {cell.item.location}
+                            </span>
+                          </>
+                        ) : (
+                          <span className="text-slate-700 text-xs font-mono">{cueStr}</span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               ))}
             </div>
