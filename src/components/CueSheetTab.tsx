@@ -128,14 +128,45 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
 
   // Build grid data: cue grid 10 racks × 12 positions
   const gridData = useMemo(() => {
-    const grid: Array<Array<{ item: ShowItem; fw: Firework } | null>> =
+    type SimEntry = { sim: SimultaneousItem; fw: Firework };
+    type GridCell = { item: ShowItem; fw: Firework; sims: SimEntry[] } | null;
+    const grid: Array<Array<GridCell>> =
       Array.from({ length: 10 }, () => Array(12).fill(null));
+
+    const getOrCreate = (rack: number, pos: number, item: ShowItem, fw: Firework) => {
+      if (!grid[rack][pos]) grid[rack][pos] = { item, fw, sims: [] };
+      return grid[rack][pos]!;
+    };
+
     showItems.forEach(item => {
       const parsed = parseCue(item.cue);
-      if (!parsed) return;
       const fw = fireworks.find(f => f.id === item.fireworkId);
-      if (!fw) return;
-      grid[parsed.rack - 1][parsed.pos - 1] = { item, fw };
+      if (parsed && fw) {
+        const cell = getOrCreate(parsed.rack - 1, parsed.pos - 1, item, fw);
+        // Attach all sims to the parent cell
+        (item.simultaneous ?? []).forEach(sim => {
+          const sfw = fireworks.find(f => f.id === sim.fireworkId);
+          if (sfw) cell.sims.push({ sim, fw: sfw });
+        });
+      }
+      // Also place sims that have their own distinct cue position
+      (item.simultaneous ?? []).forEach(sim => {
+        const sparsed = parseCue(sim.cue);
+        if (!sparsed) return;
+        const sfw = fireworks.find(f => f.id === sim.fireworkId);
+        if (!sfw) return;
+        // Skip if this cue points to the same cell as the parent
+        if (parsed && sparsed.rack === parsed.rack && sparsed.pos === parsed.pos) return;
+        const scell = getOrCreate(sparsed.rack - 1, sparsed.pos - 1, item, sfw);
+        // Replace the primary fw with the sim's fw if we created the cell via sim
+        if (scell.item === item && scell.fw === sfw) {
+          scell.fw = sfw;
+        }
+        // Add a back-reference sim entry so the cell shows the bundle link
+        if (!scell.sims.find(s => s.sim.id === sim.id)) {
+          scell.sims.push({ sim, fw: sfw });
+        }
+      });
     });
     return grid;
   }, [showItems, fireworks]);
@@ -399,10 +430,11 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                   {row.map((cell, posIdx) => {
                     const cueStr = `${rackIdx + 1}.${posIdx + 1}`;
                     const isDupe = duplicateCues.has(cueStr);
+                    const hasSims = cell && cell.sims.length > 0;
                     return (
                       <div
                         key={posIdx}
-                        className={`w-32 h-16 rounded border flex flex-col items-center justify-center text-center p-1 transition-colors ${
+                        className={`w-32 min-h-16 rounded border flex flex-col items-start justify-start text-left p-1.5 transition-colors ${
                           cell
                             ? isDupe
                               ? 'bg-amber-900/60 border-amber-500'
@@ -412,19 +444,40 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                       >
                         {cell ? (
                           <>
-                            <span className={`text-xs font-mono font-bold ${isDupe ? 'text-amber-300' : 'text-slate-200'}`}>
-                              {cueStr}
-                              {isDupe && ' ⚠'}
-                            </span>
-                            <span className="text-xs text-white font-medium leading-tight mt-0.5 line-clamp-2">
+                            {/* Cue label */}
+                            <div className="flex items-center gap-1 w-full mb-0.5">
+                              <span className={`text-xs font-mono font-bold ${isDupe ? 'text-amber-300' : 'text-slate-300'}`}>
+                                {cueStr}{isDupe && ' ⚠'}
+                              </span>
+                              {hasSims && (
+                                <span className="ml-auto text-slate-500" title={`${cell.sims.length} simultaneous`}>
+                                  <Link2 size={9} />
+                                </span>
+                              )}
+                            </div>
+                            {/* Primary firework */}
+                            <span className="text-xs text-white font-medium leading-tight w-full truncate">
                               {cell.fw.name}
                             </span>
-                            <span className="text-xs text-slate-400 font-mono mt-0.5">
+                            <span className="text-xs text-slate-400 font-mono">
                               {cell.item.location}
                             </span>
+                            {/* Simultaneous bundle */}
+                            {cell.sims.length > 0 && (
+                              <div className="mt-1 pt-1 border-t border-white/10 w-full space-y-0.5">
+                                {cell.sims.map(({ sim, fw: sfw }) => (
+                                  <div key={sim.id} className="flex items-start gap-0.5">
+                                    <span className="text-slate-400 mt-px shrink-0">↳</span>
+                                    <span className="text-xs text-slate-300 leading-tight truncate">
+                                      {sfw.name}
+                                    </span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
                           </>
                         ) : (
-                          <span className="text-slate-700 text-xs font-mono">{cueStr}</span>
+                          <span className="text-slate-700 text-xs font-mono w-full text-center my-auto">{cueStr}</span>
                         )}
                       </div>
                     );
