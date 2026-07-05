@@ -93,20 +93,22 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
     [showItems],
   );
 
-  // Detect duplicate cue numbers across all items and simultaneous
+  // Detect duplicate cue numbers across different groups (same cue within one bundle is fine)
   const duplicateCues = useMemo(() => {
-    const seen = new Map<string, number>();
-    const tally = (cue: string) => {
-      const c = cue?.trim();
-      if (!c || c === 'MANUAL') return;
-      seen.set(c, (seen.get(c) ?? 0) + 1);
-    };
+    // Map cue → Set of parent ShowItem IDs that use it
+    const cueGroups = new Map<string, Set<string>>();
     sortedItems.forEach(si => {
-      tally(si.cue);
-      (si.simultaneous ?? []).forEach(sim => tally(sim.cue));
+      const register = (cue: string) => {
+        const c = cue?.trim();
+        if (!c || c === 'MANUAL') return;
+        if (!cueGroups.has(c)) cueGroups.set(c, new Set());
+        cueGroups.get(c)!.add(si.id);
+      };
+      register(si.cue);
+      (si.simultaneous ?? []).forEach(sim => register(sim.cue));
     });
     const dupes = new Set<string>();
-    seen.forEach((count, cue) => { if (count > 1) dupes.add(cue); });
+    cueGroups.forEach((groups, cue) => { if (groups.size > 1) dupes.add(cue); });
     return dupes;
   }, [sortedItems]);
 
@@ -464,13 +466,25 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                             </span>
                             {/* Simultaneous bundle */}
                             {cell.sims.length > 0 && (
-                              <div className="mt-1 pt-1 border-t border-white/10 w-full space-y-0.5">
+                              <div className="mt-1 pt-1 border-t border-white/10 w-full space-y-1">
                                 {cell.sims.map(({ sim, fw: sfw }) => (
                                   <div key={sim.id} className="flex items-start gap-0.5">
-                                    <span className="text-slate-400 mt-px shrink-0">↳</span>
-                                    <span className="text-xs text-slate-300 leading-tight truncate">
-                                      {sfw.name}
-                                    </span>
+                                    <span className="text-slate-500 mt-px shrink-0">↳</span>
+                                    <div className="min-w-0">
+                                      <div className="text-xs text-slate-300 leading-tight truncate">
+                                        {sfw.name}
+                                      </div>
+                                      <div className="flex items-center gap-1 mt-px">
+                                        {sim.cue ? (
+                                          <span className="text-xs font-mono text-blue-400">{sim.cue}</span>
+                                        ) : (
+                                          <span className="text-xs text-slate-600">no cue</span>
+                                        )}
+                                        {sim.location && (
+                                          <span className="text-xs text-slate-500">· {sim.location}</span>
+                                        )}
+                                      </div>
+                                    </div>
                                   </div>
                                 ))}
                               </div>
