@@ -805,7 +805,7 @@ export default function PlannerTab({
   const handleDragCancel = () => { setActiveSidebarFwId(null); setDropHint(null); };
 
   const activeSidebarFw = activeSidebarFwId ? fireworks.find(f => f.id === activeSidebarFwId) : null;
-  const sidebarFws = fireworks.filter(fw => fw.phase === sidebarPhase);
+  const sidebarFws = fireworks.filter(fw => fw.phase === sidebarPhase).sort((a, b) => a.name.localeCompare(b.name));
 
   const editingItem = editingItemId ? showItems.find(si => si.id === editingItemId) : null;
   const editingFw = editingItem ? fireworks.find(f => f.id === editingItem.fireworkId) : null;
