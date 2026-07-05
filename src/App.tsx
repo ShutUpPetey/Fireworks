@@ -1,18 +1,20 @@
 import { useState, useRef } from 'react';
-import { Flame, ListOrdered, CalendarDays, FileText, Download, FolderOpen } from 'lucide-react';
+import { Flame, ListOrdered, CalendarDays, FileText, Download, FolderOpen, Map } from 'lucide-react';
 import { useStore } from './store';
 import type { SyncStatus } from './store';
 import { isConfigured } from './firebase';
 import InventoryTab from './components/InventoryTab';
 import PlannerTab from './components/PlannerTab';
 import CueSheetTab from './components/CueSheetTab';
+import MapTab from './components/MapTab';
 
-type Tab = 'inventory' | 'planner' | 'cues';
+type Tab = 'inventory' | 'planner' | 'cues' | 'map';
 
 const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
   { id: 'inventory', label: 'Inventory',    icon: <ListOrdered size={16} /> },
   { id: 'planner',   label: 'Show Planner', icon: <CalendarDays size={16} /> },
   { id: 'cues',      label: 'Cue Sheet',    icon: <FileText size={16} /> },
+  { id: 'map',       label: 'Map',          icon: <Map size={16} /> },
 ];
 
 const SYNC_LABEL: Record<SyncStatus, string> = {
@@ -176,6 +178,12 @@ export default function App() {
             showItems={store.showItems}
             onUpdate={store.updateShowItem}
             onUpdateSimultaneous={store.updateSimultaneous}
+          />
+        )}
+        {tab === 'map' && (
+          <MapTab
+            fireworks={store.fireworks}
+            showItems={store.showItems}
           />
         )}
       </main>
