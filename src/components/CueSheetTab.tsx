@@ -6,6 +6,130 @@ import {
   FIREWORK_TYPE_LABELS, TYPE_COLORS, formatDuration, formatTime, parseCue,
 } from '../types';
 
+// ── Print helpers ────────────────────────────────────────────────────────────
+
+function openPrint(title: string, orientation: 'portrait' | 'landscape', body: string, css: string) {
+  const win = window.open('', '_blank');
+  if (!win) { alert('Allow popups for this site to enable printing.'); return; }
+  win.document.write(`<!DOCTYPE html><html><head>
+<meta charset="utf-8"><title>${title}</title>
+<style>
+@page { size: letter ${orientation}; margin: ${orientation === 'landscape' ? '0.4in 0.35in' : '0.6in 0.5in'}; }
+*{box-sizing:border-box;} body{font-family:Arial,Helvetica,sans-serif;font-size:9pt;color:#000;margin:0;padding:0;}
+${css}
+</style></head><body>${body}</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); win.close(); }, 250);
+}
+
+function printCueList(sortedItems: ShowItem[], fireworks: Firework[]) {
+  const cueLabel = (cue: string) =>
+    cue === 'MANUAL' ? '<em class="manual">Manual</em>'
+    : cue ? `<b>${cue}</b>`
+    : '<span class="nc">—</span>';
+
+  const rows = sortedItems.map((item, idx) => {
+    const fw = fireworks.find(f => f.id === item.fireworkId);
+    if (!fw) return '';
+    const sims = item.simultaneous ?? [];
+    const missing = !item.cue ? ' class="miss"' : '';
+    return `<tr${missing}>
+      <td class="n">${idx + 1}</td>
+      <td class="t">${formatTime(item.startTime)}</td>
+      <td class="name">${fw.name}</td>
+      <td>${FIREWORK_TYPE_LABELS[fw.type]}</td>
+      <td class="cue">${cueLabel(item.cue)}</td>
+      <td class="loc">${item.location || ''}</td>
+      <td class="notes">${item.showNotes || ''}</td>
+    </tr>` + sims.map(sim => {
+      const sfw = fireworks.find(f => f.id === sim.fireworkId);
+      if (!sfw) return '';
+      return `<tr class="sim">
+        <td></td><td></td>
+        <td class="name">↳&nbsp;${sfw.name}</td>
+        <td>${FIREWORK_TYPE_LABELS[sfw.type]}</td>
+        <td class="cue">${cueLabel(sim.cue)}</td>
+        <td class="loc">${sim.location || ''}</td>
+        <td></td>
+      </tr>`;
+    }).join('');
+  }).join('');
+
+  openPrint('Cue Sheet', 'portrait', `
+<h1>Cue Sheet</h1>
+<div class="sub">${sortedItems.length} items · Printed ${new Date().toLocaleDateString()}</div>
+<table><thead><tr>
+  <th class="n">#</th><th class="t">Time</th><th>Firework</th><th>Type</th>
+  <th class="cue">Cue #</th><th class="loc">Location</th><th>Notes</th>
+</tr></thead><tbody>${rows}</tbody></table>`,
+  `h1{font-size:13pt;margin:0 0 3pt;}
+.sub{font-size:7.5pt;color:#666;margin-bottom:8pt;border-bottom:1pt solid #bbb;padding-bottom:4pt;}
+table{width:100%;border-collapse:collapse;}
+thead tr{border-bottom:1.5pt solid #000;}
+th{font-size:7pt;text-transform:uppercase;letter-spacing:.3pt;padding:3pt 5pt;text-align:left;background:#f2f2f2;}
+td{padding:3pt 5pt;vertical-align:middle;border-bottom:.4pt solid #ddd;}
+tr:nth-child(even):not(.sim) td{background:#f9f9f9;}
+td.n{color:#aaa;font-size:8pt;width:16pt;}
+td.t{font-family:monospace;font-size:8.5pt;color:#444;white-space:nowrap;width:34pt;}
+td.name{font-weight:600;min-width:100pt;}
+td.cue{font-family:monospace;font-weight:bold;width:28pt;}
+td.loc{width:36pt;font-family:monospace;font-size:8.5pt;}
+td.notes{font-size:8pt;color:#555;}
+.manual{color:#6d28d9;font-style:italic;}
+.nc{color:#bbb;}
+tr.miss td{background:#fffbe6!important;}
+tr.sim td{padding-top:1pt;padding-bottom:2pt;border-bottom:none;font-size:8pt;color:#555;}
+tr.sim td.name{padding-left:16pt;}`);
+}
+
+type SimEntry = { sim: SimultaneousItem; fw: Firework };
+type GridCell = { item: ShowItem; fw: Firework; sims: SimEntry[] } | null;
+
+function printRackGrid(gridData: GridCell[][], duplicateCues: Set<string>) {
+  const posHeaders = Array.from({length:12}, (_,i) => `<span>.${i+1}</span>`).join('');
+
+  const rows = gridData.map((row, ri) => {
+    const cells = row.map((cell, pi) => {
+      const cue = `${ri+1}.${pi+1}`;
+      const dupe = duplicateCues.has(cue);
+      if (!cell) return `<div class="cell empty"><span class="el">${cue}</span></div>`;
+      const simHtml = cell.sims.map(({sim, fw:sfw}) => {
+        const sc = sim.cue === 'MANUAL' ? '<i>M</i>'
+          : sim.cue ? `<b>${sim.cue}</b>` : '';
+        return `<div class="si">↳ ${sfw.name}${sc ? ' '+sc : ''}${sim.location ? ' · '+sim.location : ''}</div>`;
+      }).join('');
+      return `<div class="cell${dupe?' dupe':''}">
+        <div class="cl${dupe?' dc':''}">${cue}${dupe?' ⚠':''}</div>
+        <div class="fn">${cell.fw.name}</div>
+        <div class="lc">${cell.item.location}</div>
+        ${simHtml ? `<div class="sims">${simHtml}</div>` : ''}
+      </div>`;
+    }).join('');
+    return `<div class="row"><div class="rl">${ri+1}</div>${cells}</div>`;
+  }).join('');
+
+  openPrint('Rack Grid', 'landscape', `
+<h1>Rack Grid</h1>
+<div class="ph"><span></span>${posHeaders}</div>
+${rows}`,
+  `h1{font-size:11pt;margin:0 0 3pt;}
+.ph{display:flex;margin-left:22pt;margin-bottom:1pt;}
+.ph span{flex:1;text-align:center;font-size:6pt;color:#999;font-family:monospace;}
+.row{display:flex;align-items:flex-start;margin-bottom:2pt;}
+.rl{width:22pt;font-size:8pt;font-weight:bold;color:#555;text-align:right;padding-right:3pt;padding-top:2pt;flex-shrink:0;}
+.cell{flex:1;min-height:28pt;border:.5pt solid #ddd;border-radius:2pt;padding:2pt 2pt;margin:0 1pt;font-size:6pt;overflow:hidden;background:#fff;}
+.cell.empty{display:flex;align-items:center;justify-content:center;background:#f9f9f9;}
+.el{color:#ddd;font-family:monospace;}
+.cell.dupe{border-color:#b45309;background:#fffbe6;}
+.cl{font-family:monospace;font-weight:bold;font-size:6pt;color:#555;}
+.dc{color:#b45309;}
+.fn{font-weight:700;font-size:6.5pt;margin-top:1pt;line-height:1.2;}
+.lc{font-size:5.5pt;color:#888;font-family:monospace;}
+.sims{margin-top:2pt;border-top:.4pt solid #eee;padding-top:1pt;}
+.si{font-size:5.5pt;color:#555;line-height:1.3;}`);
+}
+
 interface Props {
   fireworks: Firework[];
   showItems: ShowItem[];
@@ -296,10 +420,14 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
           </button>
 
           <button
-            onClick={() => window.print()}
+            onClick={() =>
+              viewMode === 'list'
+                ? printCueList(sortedItems, fireworks)
+                : printRackGrid(gridData as GridCell[][], duplicateCues)
+            }
             className="flex items-center gap-2 bg-slate-700 hover:bg-slate-600 text-white rounded-lg px-4 py-2 text-sm font-medium transition-colors"
           >
-            <Printer size={14} /> Print
+            <Printer size={14} /> Print {viewMode === 'list' ? 'List' : 'Grid'}
           </button>
         </div>
       </div>

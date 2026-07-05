@@ -1,7 +1,56 @@
 import { useMemo } from 'react';
-import { MapPin } from 'lucide-react';
+import { MapPin, Printer } from 'lucide-react';
 import type { Firework, ShowItem } from '../types';
 import { parseCue } from '../types';
+
+function printMap(locationMap: Map<string, CueEntry[]>, layout: typeof LAYOUT) {
+  const locBoxes = layout.map(loc => {
+    const entries = locationMap.get(loc.id) ?? [];
+    const entryHtml = entries.length === 0
+      ? '<div class="empty">empty</div>'
+      : entries.map(e =>
+          `<div class="entry">
+            <span class="cue${e.isManual?' manual':e.cue?'':' nc'}">${e.isManual?'MAN':e.cue||'—'}</span>
+            <span class="ename">${e.name}</span>
+          </div>`
+        ).join('');
+    return `<div class="loc" style="grid-column:${loc.col};grid-row:${loc.row}">
+      <div class="lh"><span class="ll">${loc.label}</span>${entries.length?`<span class="sc">${entries.length} shots</span>`:''}</div>
+      <div class="le${loc.wide?' wide':''}">${entryHtml}</div>
+    </div>`;
+  }).join('');
+
+  const win = window.open('', '_blank');
+  if (!win) { alert('Allow popups for this site to enable printing.'); return; }
+  win.document.write(`<!DOCTYPE html><html><head>
+<meta charset="utf-8"><title>Firing Map</title>
+<style>
+@page{size:letter landscape;margin:.4in .45in;}
+*{box-sizing:border-box;}body{font-family:Arial,Helvetica,sans-serif;font-size:9pt;color:#000;margin:0;padding:0;}
+h1{font-size:12pt;margin:0 0 6pt;}
+.grid{display:grid;grid-template-columns:repeat(3,1fr);grid-template-rows:auto auto auto;gap:7pt;width:100%;}
+.loc{border:1.5pt solid #000;border-radius:3pt;overflow:hidden;}
+.lh{background:#f2f2f2;border-bottom:1pt solid #ccc;padding:3pt 6pt;display:flex;align-items:center;}
+.ll{font-weight:700;font-size:10pt;letter-spacing:1pt;}
+.sc{margin-left:auto;font-size:7.5pt;color:#666;}
+.le{padding:4pt 6pt;}
+.wide{display:grid;grid-template-columns:repeat(auto-fill,minmax(110pt,1fr));gap:1pt;}
+.empty{color:#bbb;font-size:8pt;font-style:italic;padding:2pt 0;}
+.entry{display:flex;align-items:baseline;gap:4pt;padding:1pt 0;border-bottom:.3pt solid #eee;}
+.entry:last-child{border-bottom:none;}
+.cue{font-family:monospace;font-weight:700;font-size:8.5pt;min-width:22pt;}
+.manual{color:#6d28d9;}.nc{color:#bbb;}
+.ename{font-size:8.5pt;}
+.footer{margin-top:7pt;text-align:center;font-size:7.5pt;color:#888;}
+</style></head><body>
+<h1>Firing Location Map</h1>
+<div class="grid">${locBoxes}</div>
+<div class="footer">↑ Back of site &nbsp;·&nbsp; ↓ Audience / Front &nbsp;·&nbsp; Printed ${new Date().toLocaleDateString()}</div>
+</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); win.close(); }, 250);
+}
 
 interface Props {
   fireworks: Firework[];
@@ -83,6 +132,12 @@ export default function MapTab({ fireworks, showItems }: Props) {
           <span className="flex items-center gap-1.5">
             <span className="font-mono font-bold text-slate-500">—</span> No cue
           </span>
+          <button
+            onClick={() => printMap(locationMap, LAYOUT)}
+            className="flex items-center gap-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
+          >
+            <Printer size={13} /> Print Map
+          </button>
         </div>
       </div>
 
