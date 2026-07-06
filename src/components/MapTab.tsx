@@ -20,9 +20,15 @@ function printMap(locationMap: Map<string, CueEntry[]>, layout: typeof LAYOUT) {
     </div>`;
   }).join('');
 
-  const win = window.open('', '_blank');
-  if (!win) { alert('Allow popups for this site to enable printing.'); return; }
-  win.document.write(`<!DOCTYPE html><html><head>
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;top:-10000px;left:-10000px;width:1px;height:1px;border:none;';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
+  if (!doc) { document.body.removeChild(iframe); return; }
+
+  doc.open();
+  doc.write(`<!DOCTYPE html><html><head>
 <meta charset="utf-8"><title>Firing Map</title>
 <style>
 @page{size:letter landscape;margin:.4in .45in;}
@@ -47,9 +53,13 @@ h1{font-size:12pt;margin:0 0 6pt;}
 <div class="grid">${locBoxes}</div>
 <div class="footer">↑ Back of site &nbsp;·&nbsp; ↓ Audience / Front &nbsp;·&nbsp; Printed ${new Date().toLocaleDateString()}</div>
 </body></html>`);
-  win.document.close();
-  win.focus();
-  setTimeout(() => { win.print(); win.close(); }, 250);
+  doc.close();
+
+  iframe.contentWindow?.focus();
+  setTimeout(() => {
+    iframe.contentWindow?.print();
+    setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 1000);
+  }, 300);
 }
 
 interface Props {

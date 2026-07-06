@@ -9,18 +9,28 @@ import {
 // ── Print helpers ────────────────────────────────────────────────────────────
 
 function openPrint(title: string, orientation: 'portrait' | 'landscape', body: string, css: string) {
-  const win = window.open('', '_blank');
-  if (!win) { alert('Allow popups for this site to enable printing.'); return; }
-  win.document.write(`<!DOCTYPE html><html><head>
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;top:-10000px;left:-10000px;width:1px;height:1px;border:none;';
+  document.body.appendChild(iframe);
+
+  const doc = iframe.contentDocument ?? iframe.contentWindow?.document;
+  if (!doc) { document.body.removeChild(iframe); return; }
+
+  doc.open();
+  doc.write(`<!DOCTYPE html><html><head>
 <meta charset="utf-8"><title>${title}</title>
 <style>
 @page { size: letter ${orientation}; margin: ${orientation === 'landscape' ? '0.4in 0.35in' : '0.6in 0.5in'}; }
 *{box-sizing:border-box;} body{font-family:Arial,Helvetica,sans-serif;font-size:9pt;color:#000;margin:0;padding:0;}
 ${css}
 </style></head><body>${body}</body></html>`);
-  win.document.close();
-  win.focus();
-  setTimeout(() => { win.print(); win.close(); }, 250);
+  doc.close();
+
+  iframe.contentWindow?.focus();
+  setTimeout(() => {
+    iframe.contentWindow?.print();
+    setTimeout(() => { if (document.body.contains(iframe)) document.body.removeChild(iframe); }, 1000);
+  }, 300);
 }
 
 function formatGap(secs: number): string {
