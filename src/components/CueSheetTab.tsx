@@ -23,6 +23,14 @@ ${css}
   setTimeout(() => { win.print(); win.close(); }, 250);
 }
 
+function formatGap(secs: number): string {
+  if (secs <= 0) return '0s';
+  if (secs < 60) return `+${secs}s`;
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `+${m}:${String(s).padStart(2, '0')}`;
+}
+
 function printCueList(sortedItems: ShowItem[], fireworks: Firework[]) {
   const cueLabel = (cue: string) =>
     cue === 'MANUAL' ? '<em class="manual">Manual</em>'
@@ -34,24 +42,32 @@ function printCueList(sortedItems: ShowItem[], fireworks: Firework[]) {
     if (!fw) return '';
     const sims = item.simultaneous ?? [];
     const missing = !item.cue ? ' class="miss"' : '';
+    const span = sims.length + 1;
+    const gap = idx < sortedItems.length - 1
+      ? formatGap(sortedItems[idx + 1].startTime - item.startTime)
+      : '—';
     return `<tr${missing}>
-      <td class="n">${idx + 1}</td>
-      <td class="t">${formatTime(item.startTime)}</td>
+      <td class="cue">${cueLabel(item.cue)}</td>
+      <td class="gap" rowspan="${span}">${gap}</td>
+      <td class="n" rowspan="${span}">${idx + 1}</td>
+      <td class="t" rowspan="${span}">${formatTime(item.startTime)}</td>
       <td class="name">${fw.name}</td>
       <td>${FIREWORK_TYPE_LABELS[fw.type]}</td>
-      <td class="cue">${cueLabel(item.cue)}</td>
+      <td class="dur">${formatDuration(fw.duration)}</td>
       <td class="loc">${item.location || ''}</td>
       <td class="notes">${item.showNotes || ''}</td>
     </tr>` + sims.map(sim => {
       const sfw = fireworks.find(f => f.id === sim.fireworkId);
       if (!sfw) return '';
+      const offsetLabel = sim.offset === 0 ? 'same time'
+        : sim.offset > 0 ? `+${sim.offset}s` : `${sim.offset}s`;
       return `<tr class="sim">
-        <td></td><td></td>
-        <td class="name">↳&nbsp;${sfw.name}</td>
-        <td>${FIREWORK_TYPE_LABELS[sfw.type]}</td>
         <td class="cue">${cueLabel(sim.cue)}</td>
+        <td class="name sim-name">↳&nbsp;${sfw.name}</td>
+        <td>${FIREWORK_TYPE_LABELS[sfw.type]}</td>
+        <td class="dur">${formatDuration(sfw.duration)}</td>
         <td class="loc">${sim.location || ''}</td>
-        <td></td>
+        <td class="notes">${offsetLabel}</td>
       </tr>`;
     }).join('');
   }).join('');
@@ -60,8 +76,8 @@ function printCueList(sortedItems: ShowItem[], fireworks: Firework[]) {
 <h1>Cue Sheet</h1>
 <div class="sub">${sortedItems.length} items · Printed ${new Date().toLocaleDateString()}</div>
 <table><thead><tr>
-  <th class="n">#</th><th class="t">Time</th><th>Firework</th><th>Type</th>
-  <th class="cue">Cue #</th><th class="loc">Location</th><th>Notes</th>
+  <th class="cue">Cue #</th><th class="gap">→ Next</th><th class="n">#</th><th class="t">Time</th>
+  <th>Firework</th><th>Type</th><th class="dur">Duration</th><th class="loc">Location</th><th>Notes</th>
 </tr></thead><tbody>${rows}</tbody></table>`,
   `h1{font-size:13pt;margin:0 0 3pt;}
 .sub{font-size:7.5pt;color:#666;margin-bottom:8pt;border-bottom:1pt solid #bbb;padding-bottom:4pt;}
@@ -70,10 +86,12 @@ thead tr{border-bottom:1.5pt solid #000;}
 th{font-size:7pt;text-transform:uppercase;letter-spacing:.3pt;padding:3pt 5pt;text-align:left;background:#f2f2f2;}
 td{padding:3pt 5pt;vertical-align:middle;border-bottom:.4pt solid #ddd;}
 tr:nth-child(even):not(.sim) td{background:#f9f9f9;}
-td.n{color:#aaa;font-size:8pt;width:16pt;}
+td.cue{font-family:monospace;font-weight:bold;width:36pt;}
+td.gap{font-family:monospace;font-size:8pt;color:#555;width:30pt;white-space:nowrap;text-align:right;}
+td.n{color:#aaa;font-size:8pt;width:14pt;}
 td.t{font-family:monospace;font-size:8.5pt;color:#444;white-space:nowrap;width:34pt;}
 td.name{font-weight:600;min-width:100pt;}
-td.cue{font-family:monospace;font-weight:bold;width:28pt;}
+td.dur{font-family:monospace;font-size:8pt;color:#666;width:28pt;}
 td.loc{width:36pt;font-family:monospace;font-size:8.5pt;}
 td.notes{font-size:8pt;color:#555;}
 .manual{color:#6d28d9;font-style:italic;}
@@ -449,15 +467,16 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
             <table className="w-full text-sm">
               <thead className="bg-slate-900 sticky top-0 z-10">
                 <tr>
-                  <th className="text-left px-4 py-3 text-slate-400 font-medium w-10">#</th>
-                  <th className="text-left px-4 py-3 text-slate-400 font-medium w-24">Time</th>
-                  <th className="text-left px-4 py-3 text-slate-400 font-medium">Firework</th>
-                  <th className="text-left px-4 py-3 text-slate-400 font-medium">Type</th>
-                  <th className="text-left px-4 py-3 text-slate-400 font-medium">Phase</th>
-                  <th className="text-right px-4 py-3 text-slate-400 font-medium">Duration</th>
-                  <th className="text-center px-4 py-3 text-slate-400 font-medium">Cue #</th>
-                  <th className="text-center px-4 py-3 text-slate-400 font-medium">Location</th>
-                  <th className="text-left px-4 py-3 text-slate-400 font-medium">Notes</th>
+                  <th className="text-center px-3 py-3 text-slate-400 font-medium w-28">Cue #</th>
+                  <th className="text-right px-3 py-3 text-slate-400 font-medium w-16">→ Next</th>
+                  <th className="text-left px-3 py-3 text-slate-400 font-medium w-8">#</th>
+                  <th className="text-left px-3 py-3 text-slate-400 font-medium w-20">Time</th>
+                  <th className="text-left px-3 py-3 text-slate-400 font-medium">Firework</th>
+                  <th className="text-left px-3 py-3 text-slate-400 font-medium">Type</th>
+                  <th className="text-left px-3 py-3 text-slate-400 font-medium">Phase</th>
+                  <th className="text-right px-3 py-3 text-slate-400 font-medium">Duration</th>
+                  <th className="text-center px-3 py-3 text-slate-400 font-medium">Location</th>
+                  <th className="text-left px-3 py-3 text-slate-400 font-medium">Notes</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800">
@@ -478,38 +497,43 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                     : isDupe
                     ? 'border-l-2 border-l-red-500'
                     : 'border-l-2 border-l-transparent';
+                  const nextItem = sortedItems[idx + 1];
+                  const gap = nextItem ? nextItem.startTime - item.startTime : null;
                   return (
                     <React.Fragment key={item.id}>
                       <tr className={`group ${rowBg}`}>
-                        <td className={`px-4 py-2.5 text-slate-500 font-mono ${borderColor}`} rowSpan={sims.length + 1}>
+                        <td className={`px-3 py-2.5 text-center ${borderColor}`}>
+                          <CueInput item={item} isDuplicate={isDupe} onUpdate={onUpdate} />
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-mono text-xs text-slate-400 whitespace-nowrap" rowSpan={sims.length + 1}>
+                          {gap !== null ? formatGap(gap) : <span className="text-slate-700">—</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-slate-500 font-mono text-xs" rowSpan={sims.length + 1}>
                           {idx + 1}
                         </td>
-                        <td className="px-4 py-2.5 text-slate-400 font-mono text-xs" rowSpan={sims.length + 1}>
+                        <td className="px-3 py-2.5 text-slate-400 font-mono text-xs whitespace-nowrap" rowSpan={sims.length + 1}>
                           {formatTime(item.startTime)}
                         </td>
-                        <td className="px-4 py-2.5">
+                        <td className="px-3 py-2.5">
                           <span className="text-white font-medium">{fw.name}</span>
                           {fw.notes && (
                             <p className="text-xs text-slate-500 truncate max-w-48 mt-0.5">{fw.notes}</p>
                           )}
                         </td>
-                        <td className="px-4 py-2.5">
+                        <td className="px-3 py-2.5">
                           <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[fw.type]}`}>
                             {FIREWORK_TYPE_LABELS[fw.type]}
                           </span>
                         </td>
-                        <td className="px-4 py-2.5">
+                        <td className="px-3 py-2.5">
                           <span className={`text-xs px-2 py-0.5 rounded-full ${pc.badge}`}>
                             {PHASE_LABELS[fw.phase]}
                           </span>
                         </td>
-                        <td className="px-4 py-2.5 text-right text-slate-400 font-mono text-xs">
+                        <td className="px-3 py-2.5 text-right text-slate-400 font-mono text-xs">
                           {formatDuration(fw.duration)}
                         </td>
-                        <td className="px-4 py-2.5 text-center">
-                          <CueInput item={item} isDuplicate={isDupe} onUpdate={onUpdate} />
-                        </td>
-                        <td className="px-4 py-2.5 text-center">
+                        <td className="px-3 py-2.5 text-center">
                           <select
                             className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500"
                             value={item.location}
@@ -518,7 +542,7 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                             {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
                           </select>
                         </td>
-                        <td className="px-4 py-2.5">
+                        <td className="px-3 py-2.5">
                           <input
                             className="w-full bg-transparent border-b border-transparent hover:border-slate-600 focus:border-blue-500 focus:outline-none text-xs text-slate-400 placeholder-slate-600 py-0.5"
                             placeholder="show notes…"
@@ -535,33 +559,34 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                         const simDupe = !!(sim.cue && duplicateCues.has(sim.cue.trim()));
                         return (
                           <tr key={sim.id} className="bg-slate-900/40 border-t border-slate-800/50">
-                            <td className="px-4 py-1.5">
-                              <div className="flex items-center gap-1.5">
-                                <Link2 size={11} className="text-slate-500 shrink-0" />
-                                <span className="text-slate-300 text-xs">{sfw.name}</span>
-                              </div>
-                            </td>
-                            <td className="px-4 py-1.5">
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[sfw.type]}`}>
-                                {FIREWORK_TYPE_LABELS[sfw.type]}
-                              </span>
-                            </td>
-                            <td className="px-4 py-1.5">
-                              <span className={`text-xs px-2 py-0.5 rounded-full ${spc.badge}`}>
-                                {PHASE_LABELS[sfw.phase]}
-                              </span>
-                            </td>
-                            <td className="px-4 py-1.5 text-right text-slate-500 font-mono text-xs">
-                              {formatDuration(sfw.duration)}
-                            </td>
-                            <td className="px-4 py-1.5 text-center">
+                            <td className={`px-3 py-1.5 text-center ${borderColor}`}>
                               <SimCueInput
                                 sim={sim}
                                 isDuplicate={simDupe}
                                 onUpdate={updated => onUpdateSimultaneous(item.id, updated)}
                               />
                             </td>
-                            <td className="px-4 py-1.5 text-center">
+                            {/* gap, #, time cols spanned by parent row */}
+                            <td className="px-3 py-1.5">
+                              <div className="flex items-center gap-1.5">
+                                <Link2 size={11} className="text-slate-500 shrink-0" />
+                                <span className="text-slate-300 text-xs">{sfw.name}</span>
+                              </div>
+                            </td>
+                            <td className="px-3 py-1.5">
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[sfw.type]}`}>
+                                {FIREWORK_TYPE_LABELS[sfw.type]}
+                              </span>
+                            </td>
+                            <td className="px-3 py-1.5">
+                              <span className={`text-xs px-2 py-0.5 rounded-full ${spc.badge}`}>
+                                {PHASE_LABELS[sfw.phase]}
+                              </span>
+                            </td>
+                            <td className="px-3 py-1.5 text-right text-slate-500 font-mono text-xs">
+                              {formatDuration(sfw.duration)}
+                            </td>
+                            <td className="px-3 py-1.5 text-center">
                               <select
                                 className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none focus:border-blue-500"
                                 value={sim.location}
@@ -570,7 +595,7 @@ export default function CueSheetTab({ fireworks, showItems, onUpdate, onUpdateSi
                                 {LOCATIONS.map(l => <option key={l} value={l}>{l}</option>)}
                               </select>
                             </td>
-                            <td className="px-4 py-1.5">
+                            <td className="px-3 py-1.5">
                               <div className="flex items-center gap-1.5">
                                 <input
                                   type="number"
