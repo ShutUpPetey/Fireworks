@@ -1,8 +1,11 @@
 import { useState, useRef } from 'react';
-import { Flame, ListOrdered, CalendarDays, FileText, Download, FolderOpen, Map } from 'lucide-react';
+import { Flame, ListOrdered, CalendarDays, FileText, Download, FolderOpen, Map, Shield, LogOut } from 'lucide-react';
 import { useStore } from './store';
 import type { SyncStatus } from './store';
-import { isConfigured } from './firebase';
+import { isConfigured, signOut } from './firebase';
+import AuthGate from './components/AuthGate';
+import type { AuthUser } from './components/AuthGate';
+import AdminPanel from './components/AdminPanel';
 import InventoryTab from './components/InventoryTab';
 import PlannerTab from './components/PlannerTab';
 import CueSheetTab from './components/CueSheetTab';
@@ -31,8 +34,10 @@ const SYNC_DOT: Record<SyncStatus, string> = {
   local:   'bg-slate-500',
 };
 
-export default function App() {
+function AppContent({ user }: { user: AuthUser }) {
   const [tab, setTab] = useState<Tab>('inventory');
+  const [showAdmin, setShowAdmin] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const store = useStore();
   const loadInputRef = useRef<HTMLInputElement>(null);
 
@@ -67,6 +72,10 @@ export default function App() {
     e.target.value = '';
   };
 
+  const initials = user.name
+    ? user.name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()
+    : user.email[0].toUpperCase();
+
   return (
     <div className="flex flex-col h-screen bg-slate-900 text-slate-100 overflow-hidden">
       {/* Header */}
@@ -95,10 +104,10 @@ export default function App() {
           ))}
         </nav>
 
-        {/* Right side: sync status + save/load + stats */}
+        {/* Right side */}
         <div className="ml-auto flex items-center gap-2">
 
-          {/* Sync status badge */}
+          {/* Sync status */}
           <div
             className="flex items-center gap-1.5 text-xs text-slate-400 px-2 py-1 rounded-md bg-slate-800/60"
             title={isConfigured ? 'Firebase Realtime Database' : 'Configure Firebase in src/firebase-config.ts to enable cloud sync'}
@@ -135,12 +144,43 @@ export default function App() {
           />
 
           <div className="hidden md:flex items-center gap-4 text-xs text-slate-500 border-l border-slate-800 pl-3 ml-1">
-            <span>
-              <span className="text-slate-300">{store.fireworks.length}</span> fireworks
-            </span>
-            <span>
-              <span className="text-slate-300">{store.showItems.length}</span> in show
-            </span>
+            <span><span className="text-slate-300">{store.fireworks.length}</span> fireworks</span>
+            <span><span className="text-slate-300">{store.showItems.length}</span> in show</span>
+          </div>
+
+          {/* User avatar + menu */}
+          <div className="relative ml-1">
+            <button
+              onClick={() => setShowUserMenu(m => !m)}
+              onBlur={() => setTimeout(() => setShowUserMenu(false), 150)}
+              className="w-8 h-8 rounded-full bg-blue-700 hover:bg-blue-600 flex items-center justify-center text-xs font-bold text-white transition-colors shrink-0"
+              title={user.email}
+            >
+              {initials}
+            </button>
+
+            {showUserMenu && (
+              <div className="absolute right-0 top-10 w-52 bg-slate-800 border border-slate-700 rounded-xl shadow-2xl z-50 py-1 overflow-hidden">
+                <div className="px-3 py-2.5 border-b border-slate-700">
+                  <p className="text-white text-sm font-medium truncate">{user.name}</p>
+                  <p className="text-slate-400 text-xs truncate">{user.email}</p>
+                </div>
+                {user.role === 'admin' && (
+                  <button
+                    onMouseDown={() => { setShowAdmin(true); setShowUserMenu(false); }}
+                    className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-slate-300 hover:bg-slate-700 hover:text-white transition-colors"
+                  >
+                    <Shield size={13} className="text-blue-400" /> Manage Access
+                  </button>
+                )}
+                <button
+                  onMouseDown={() => signOut()}
+                  className="w-full text-left flex items-center gap-2 px-3 py-2 text-sm text-slate-400 hover:bg-slate-700 hover:text-red-400 transition-colors"
+                >
+                  <LogOut size={13} /> Sign out
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </header>
@@ -187,6 +227,18 @@ export default function App() {
           />
         )}
       </main>
+
+      {showAdmin && (
+        <AdminPanel currentUser={user} onClose={() => setShowAdmin(false)} />
+      )}
     </div>
+  );
+}
+
+export default function App() {
+  return (
+    <AuthGate>
+      {user => <AppContent user={user} />}
+    </AuthGate>
   );
 }
