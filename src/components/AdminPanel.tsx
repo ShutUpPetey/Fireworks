@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, UserPlus, Trash2, User, Shield } from 'lucide-react';
-import { db, ref, get, set, remove, onValue, emailToKey } from '../firebase';
+import { db, ref, set, remove, onValue, emailToKey } from '../firebase';
 import type { AuthUser } from './AuthGate';
 
 interface Props {
